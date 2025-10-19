@@ -1,0 +1,4 @@
+Flask
+Flask-Cors
+bcrypt
+psycopg2-binary

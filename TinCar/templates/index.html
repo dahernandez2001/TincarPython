@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TinCar - Bienvenida</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background-color: #111; /* fondo oscuro */
+      color: #fff;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 60px;
+      background-color: #111;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: bold;
+      font-size: 22px;
+      color: #ffb400;
+    }
+
+    nav a {
+      color: #fff;
+      text-decoration: none;
+      margin-left: 30px;
+      font-size: 16px;
+    }
+
+    nav a:hover {
+      color: #ffb400;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 80px 60px;
+      background-color: #1a1a1a;
+    }
+
+    .hero-text {
+      max-width: 500px;
+    }
+
+    .hero-text h1 {
+      color: #ffb400;
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+
+    .hero-text p {
+      font-size: 18px;
+      line-height: 1.6;
+      margin-bottom: 30px;
+      color: #ddd;
+    }
+
+    .btn-primary {
+      background-color: #ffb400;
+      color: #111;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .btn-primary:hover {
+      background-color: #e69f00;
+    }
+
+    .hero-img {
+      max-width: 350px;
+    }
+
+    .about {
+      background-color: #fcefdc;
+      color: #111;
+      padding: 60px;
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+    }
+
+    .about h2 {
+      font-size: 32px;
+      margin-bottom: 20px;
+    }
+
+    .about p {
+      max-width: 600px;
+      font-size: 18px;
+      line-height: 1.6;
+      margin-bottom: 30px;
+    }
+
+    .btn-secondary {
+      background-color: #ffb400;
+      color: #111;
+      padding: 12px 24px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .btn-secondary:hover {
+      background-color: #e69f00;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      🚗 TinCar
+    </div>
+    <nav>
+      <a href="#Inicio">Inicio</a>
+      <a href="Acerca de nosotros">Acerca de nosotros</a>
+      <a href="#contacto">Contacto</a>
+    </nav>
+  </header>
+
+  <section class="hero" id="home">
+    <div class="hero-text">
+      <h1>Bienvenido a TinCar</h1>
+      <p>¿Estas listo para sumergirte en la mejor experiencia que tendras buscando o arrendando parqueadores en cualquier zona y lugar?</p>
+      <a href="{{ url_for('register') }}" class="btn-primary">Registrarme</a>
+    </div>
+    <div class="hero-img">
+      <!-- Auto en SVG (puedes reemplazar por imagen PNG si prefieres) -->
+      <svg viewBox="0 0 64 32" fill="#ffb400" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 8h32l8 10v10H8V18z"/>
+        <circle cx="16" cy="26" r="4" fill="#111"/>
+        <circle cx="48" cy="26" r="4" fill="#111"/>
+      </svg>
+    </div>
+  </section>
+
+  <section class="about" id="about">
+    <h2>Acerca de TinCar</h2>
+    <p>Somos un proyecto que nace a traves de la necesidad de presentar una solucion para los probelmas de movilidad y la falta de parqueaderos em Bogotá</p>
+    <a href="#contacto" class="btn-secondary">Leer más</a>
+  </section>
+
+</body>
+</html>
