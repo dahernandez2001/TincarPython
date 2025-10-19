@@ -2,7 +2,7 @@ import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 
-# === Configuración de rutas absolutas ===
+# Configuración rutas absolutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(
@@ -11,18 +11,19 @@ app = Flask(
     template_folder=os.path.join(BASE_DIR, 'templates')
 )
 
-# ⚙️ Configuración especial para GitHub Codespaces
-app.config['SERVER_NAME'] = 'dahernandez2001-tincar-5000.app.github.dev'
-app.config['PREFERRED_URL_SCHEME'] = 'https'
-
-# === Configuración general ===
 app.secret_key = 'clave-secreta'
 DB_NAME = os.path.join(BASE_DIR, 'tincar.db')
 
 
 # === Funciones de base de datos ===
-def create_users_table():
+def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row  # Permite acceder por nombre de columna
+    return conn
+
+
+def create_users_table():
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -38,7 +39,7 @@ def create_users_table():
 
 
 def get_user_by_email(email):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('SELECT * FROM users WHERE email = ?', (email,))
     user = c.fetchone()
@@ -47,7 +48,7 @@ def get_user_by_email(email):
 
 
 def insert_user(name, email, password, role):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
               (name, email, password, role))
@@ -86,11 +87,12 @@ def login():
         password = request.form['password']
         user = get_user_by_email(email)
 
-        if user and user[3] == password:  # password es el índice correcto
-            session['user_id'] = user[0]
-            session['name'] = user[1]
-            session['email'] = user[2]
-            session['role'] = user[4]  # todavía se guarda por si quieres usarlo más adelante
+        if user and user['password'] == password:
+            session['user_id'] = user['id']
+            session['name'] = user['name']
+            session['email'] = user['email']
+            session['role'] = user['role']
+            print("ROL LOGUEADO:", user['role'])  # debug
             return redirect(url_for('dashboard'))
         else:
             flash('Correo o contraseña incorrectos', 'error')
@@ -102,7 +104,12 @@ def login():
 def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', name=session['name'])
+
+    return render_template(
+        'dashboard.html',
+        name=session.get('name'),
+        role=session.get('role')
+    )
 
 
 @app.route('/logout')
@@ -111,22 +118,7 @@ def logout():
     return redirect(url_for('login'))
 
 
-# === Ruta de prueba para verificar CSS ===
-@app.route('/test_static')
-def test_static():
-    return '''
-    <html>
-        <head>
-            <link rel="stylesheet" href="/static/style.css">
-        </head>
-        <body>
-            <h1>✅ CSS cargado correctamente desde static!</h1>
-        </body>
-    </html>
-    '''
-
-
-# === Ejecutar la app ===
+# Ejecutar la app
 if __name__ == '__main__':
     create_users_table()
     app.run(host='0.0.0.0', port=5000, debug=True)

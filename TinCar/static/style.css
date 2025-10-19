@@ -89,3 +89,84 @@ body {
 .form-container a:hover {
   text-decoration: underline;
 }
+
+
+.btn {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #4CAF50; /* verde */
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.btn:hover {
+    background-color: #45a049;
+}
+
+.logout-btn {
+    background-color: #f44336; /* rojo */
+}
+
+.logout-btn:hover {
+    background-color: #da190b;
+}
+
+
+.dashboard-container {
+    padding: 20px;
+    max-width: 100%;
+}
+
+/* Contenedor de bienvenida y botones */
+.welcome-container {
+    text-align: center; /* Centrado; cambia a left si quieres alineado a la izquierda */
+    margin-bottom: 20px; /* Espacio debajo del mensaje antes del mapa */
+}
+
+/* Botón general */
+.btn {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #4CAF50; /* verde */
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    transition: background-color 0.3s;
+    margin: 5px; /* espacio entre botones */
+}
+
+.btn:hover {
+    background-color: #45a049;
+}
+
+/* Botón de cerrar sesión */
+.logout-btn {
+    background-color: #f44336; /* rojo */
+}
+
+.logout-btn:hover {
+    background-color: #da190b;
+}
+
+/* Botón de reservar parqueadero */
+.reserve-btn {
+    background-color: #2196F3; /* azul */
+}
+
+.reserve-btn:hover {
+    background-color: #0b7dda;
+}
+
+/* Mapa independiente */
+#map {
+    height: 50vh;       /* mitad de la pantalla vertical */
+    width: 50vw;        /* mitad de la pantalla horizontal */
+    border-radius: 10px;
+    border: 2px solid #333;
+    margin: 20px auto;  /* centrado horizontal y margen arriba/abajo */
+    display: block;
+}
