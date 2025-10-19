@@ -1,31 +1,24 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Registrarse - TinCar</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-</head>
-<body>
-  <div class="form-container">
-    <h2>Crear Cuenta</h2>
-    <form method="POST">
-      <input type="text" name="name" placeholder="Nombre completo" required>
-      <input type="email" name="email" placeholder="Correo electrónico" required>
-      <input type="password" name="password" placeholder="Contraseña" required>
-      <input type="text" name="phone" placeholder="Teléfono" required>
+{% extends "layout.html" %}
 
-      <!-- Desplegable de Rol -->
-      <select name="role" required>
-        <option value="" disabled selected>Selecciona un rol</option>
-        <option value="arrendador">Arrendador</option>
-        <option value="conductor">Conductor</option>
-      </select>
+{% block content %}
+<div class="form-container">
+  <h2>Crear Cuenta</h2>
+  <form method="POST">
+    <input type="text" name="name" placeholder="Nombre completo" required>
+    <input type="email" name="email" placeholder="Correo electrónico" required>
+    <input type="password" name="password" placeholder="Contraseña" required>
+    <input type="text" name="phone" placeholder="Teléfono" required>
 
-      <button type="submit">Registrar</button>
-    </form>
-    <p>¿Ya tienes cuenta?
-      <a href="{{ url_for('login') }}">Inicia sesión</a>
-    </p>
-  </div>
-</body>
-</html>
+    <select name="role" required>
+      <option value="" disabled selected>Selecciona un rol</option>
+      <option value="arrendador">Arrendador</option>
+      <option value="conductor">Conductor</option>
+    </select>
+
+    <button type="submit">Registrar</button>
+  </form>
+  <p>¿Ya tienes cuenta?
+    <a href="{{ url_for('login') }}">Inicia sesión</a>
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="dashboard-container">
+  <h2>Bienvenido, {{ name }}!</h2>
+
+  <div class="buttons">
+    <a href="{{ url_for('logout') }}" class="btn">Cerrar Sesión</a>
+  </div>
+</div>
+{% endblock %}
