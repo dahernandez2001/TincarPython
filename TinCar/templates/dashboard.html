@@ -6,12 +6,12 @@
   <div class="welcome-container">
     <h2>Bienvenido, {{ name }}!</h2>
     
-    {% if role == "arrendador" %}
+    {% if role == "conductor" %}
       <h3>¿A dónde quieres ir hoy?</h3>
       <a href="#" class="btn reserve-btn">Apartar Parqueadero</a>
-    {% elif role == "conductor" %}
-      <h3>Panel de Conductor</h3>
-      <p>Aquí puedes ver autos disponibles y tus reservas.</p>
+    {% elif role == "arrendador" %}
+      <h3>Panel de Arrendador</h3>
+      <p>Aquí puedes gestionar tus parqueaderos o ver tus ingresos.</p>
     {% else %}
       <p>Rol desconocido: {{ role }}</p>
     {% endif %}
@@ -21,13 +21,13 @@
     </div>
   </div>
 
-  <!-- Mapa independiente -->
-  {% if role == "arrendador" %}
+  <!-- Mapa independiente (solo visible para conductores) -->
+  {% if role == "conductor" %}
     <div id="map"></div>
   {% endif %}
 </div>
 
-{% if role == "arrendador" %}
+{% if role == "conductor" %}
 <!-- Leaflet para el mapa -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

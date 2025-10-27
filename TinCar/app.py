@@ -65,19 +65,33 @@ def home():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        password = request.form['password']
-        role = request.form['role']
+        name = request.form.get('name')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        phone = request.form.get('phone')
+        role = request.form.get('role')  # conductor o arrendador
+
+        if not all([name, email, password, phone, role]):
+            flash('Por favor completa todos los campos.', 'error')
+            return redirect(url_for('register'))
 
         if get_user_by_email(email):
             flash('El correo ya está registrado', 'error')
-        else:
-            insert_user(name, email, password, role)
-            flash('Cuenta creada exitosamente. Ahora inicia sesión.', 'success')
-            return redirect(url_for('login'))
+            return redirect(url_for('register'))
+
+        # Guardar el nuevo usuario
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute('INSERT INTO users (name, email, password, phone, role) VALUES (?, ?, ?, ?, ?)',
+                  (name, email, password, phone, role))
+        conn.commit()
+        conn.close()
+
+        flash('Cuenta creada exitosamente, ahora inicia sesión.', 'success')
+        return redirect(url_for('login'))
 
     return render_template('register.html')
+
 
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -122,21 +122,21 @@ body {
 
 /* Contenedor de bienvenida y botones */
 .welcome-container {
-    text-align: center; /* Centrado; cambia a left si quieres alineado a la izquierda */
-    margin-bottom: 20px; /* Espacio debajo del mensaje antes del mapa */
+    text-align: center; /* Centrado; cambia a left si prefieres */
+    margin-bottom: 20px;
 }
 
-/* Botón general */
+/* Botones generales */
 .btn {
     display: inline-block;
     padding: 10px 20px;
-    background-color: #4CAF50; /* verde */
+    background-color: #4CAF50;
     color: white;
     text-decoration: none;
     border-radius: 5px;
     font-weight: bold;
     transition: background-color 0.3s;
-    margin: 5px; /* espacio entre botones */
+    margin: 5px;
 }
 
 .btn:hover {
@@ -145,28 +145,28 @@ body {
 
 /* Botón de cerrar sesión */
 .logout-btn {
-    background-color: #f44336; /* rojo */
+    background-color: #f44336;
 }
 
 .logout-btn:hover {
     background-color: #da190b;
 }
 
-/* Botón de reservar parqueadero */
+/* Botón de apartar parqueadero */
 .reserve-btn {
-    background-color: #2196F3; /* azul */
+    background-color: #2196F3;
 }
 
 .reserve-btn:hover {
     background-color: #0b7dda;
 }
 
-/* Mapa independiente */
+/* Mapa */
 #map {
-    height: 50vh;       /* mitad de la pantalla vertical */
-    width: 50vw;        /* mitad de la pantalla horizontal */
+    height: 50vh;       /* mitad de la pantalla en alto */
+    width: 50vw;        /* mitad de la pantalla en ancho */
     border-radius: 10px;
     border: 2px solid #333;
-    margin: 20px auto;  /* centrado horizontal y margen arriba/abajo */
+    margin: 20px auto;
     display: block;
 }
