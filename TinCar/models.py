@@ -47,6 +47,121 @@ def create_users_table():
     conn.commit()
     conn.close()
 
+
+def create_parkings_table():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS parkings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id INTEGER NOT NULL,
+            name TEXT,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            department TEXT,
+            city TEXT,
+            housing_type TEXT,
+            size TEXT,
+            features TEXT,
+            image_path TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def add_parking(owner_id, name, phone=None, email=None, address=None, department=None, city=None,
+                housing_type=None, size=None, features=None, image_path=None, active=1):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO parkings (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active))
+    conn.commit()
+    last_id = cursor.lastrowid
+    # Recuperar el registro insertado y devolverlo como dict
+    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active, created_at FROM parkings WHERE id = ?', (last_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        'id': row[0],
+        'owner_id': row[1],
+        'name': row[2],
+        'phone': row[3],
+        'email': row[4],
+        'address': row[5],
+        'department': row[6],
+        'city': row[7],
+        'housing_type': row[8],
+        'size': row[9],
+        'features': row[10],
+        'image_path': row[11],
+        'active': bool(row[12]),
+        'created_at': row[13]
+    }
+
+
+def get_parkings_by_owner(owner_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, phone, email, address, department, city, housing_type, size, features, image_path, active FROM parkings WHERE owner_id = ?', (owner_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    # Convert to list of dicts
+    parkings = []
+    for r in rows:
+        parkings.append({
+            'id': r[0], 'name': r[1], 'phone': r[2], 'email': r[3], 'address': r[4], 'department': r[5], 'city': r[6],
+            'housing_type': r[7], 'size': r[8], 'features': r[9], 'image_path': r[10], 'active': bool(r[11])
+        })
+    return parkings
+
+
+def get_parking(parking_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active, created_at FROM parkings WHERE id = ?', (parking_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {
+        'id': r[0], 'owner_id': r[1], 'name': r[2], 'phone': r[3], 'email': r[4], 'address': r[5], 'department': r[6], 'city': r[7],
+        'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11], 'active': bool(r[12]), 'created_at': r[13]
+    }
+
+
+def update_parking(parking_id, **fields):
+    # fields: name, phone, email, address, department, city, housing_type, size, features, image_path, active
+    allowed = ['name','phone','email','address','department','city','housing_type','size','features','image_path','active']
+    keys = [k for k in fields.keys() if k in allowed]
+    if not keys:
+        return False
+    set_clause = ', '.join([f"{k} = ?" for k in keys])
+    params = [ (1 if fields[k] is True else 0) if k=='active' and isinstance(fields[k], bool) else fields[k] for k in keys]
+    params.append(parking_id)
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'UPDATE parkings SET {set_clause} WHERE id = ?', params)
+    conn.commit()
+    conn.close()
+    return True
+
+
+def delete_parking(parking_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM parkings WHERE id = ?', (parking_id,))
+    conn.commit()
+    conn.close()
+    return True
+
 def add_user(name, email, password, phone, role):
     conn = get_connection()
     cursor = conn.cursor()

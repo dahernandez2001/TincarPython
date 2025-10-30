@@ -184,10 +184,48 @@ header nav a:hover { color: #FFB300 }
 .parkings-table thead th { padding: 12px 10px; }
 .parkings-table tbody td { padding: 12px 10px; }
 
+/* Make parking name clearly clickable */
+.parking-name { cursor: pointer; }
+.parking-name:hover { text-decoration: underline; }
+
 /* custom scrollbar for the inner table */
 .table-responsive::-webkit-scrollbar { height: 8px; width:10px }
 .table-responsive::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px }
 .table-responsive::-webkit-scrollbar-track { background: rgba(0,0,0,0.12); border-radius: 8px }
+
+/* Modal overlay + zoom */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+}
+.modal-overlay.open { display:flex; }
+.modal-card {
+  width: 90%;
+  max-width: 920px;
+  background: rgba(24,24,24,0.98);
+  border-radius: 12px;
+  transform: scale(0.85);
+  transition: transform 220ms ease, opacity 220ms ease;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+}
+.modal-overlay.open .modal-card { transform: scale(1); opacity: 1 }
+.modal-close { position:absolute; right:14px; top:14px; background:#FFB300; border-radius:50%; width:34px; height:34px; border:none; color:#1A1919; font-weight:700 }
+.modal-header { padding:18px 12px; }
+.modal-body { padding: 8px 20px 18px 20px; }
+.modal-footer { padding: 0 20px; }
+.upload-placeholder { width:140px; height:120px; background: rgba(255,255,255,0.03); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#aaa }
+.form-control { background-color: rgba(255,255,255,0.03); border: none; color: #eee }
+.form-control::placeholder { color: #9b9b9b }
+.btn-outline-light { background: transparent; color: #1A1919; border: 2px solid #000; }
 
 
 /* ---------- SOCIAL LOGIN ---------- */

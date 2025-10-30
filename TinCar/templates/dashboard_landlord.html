@@ -27,12 +27,12 @@
   <div class="landlord-card">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0">Tus parqueaderos</h5>
-      <a href="#" class="btn btn-orange">Agregar parqueadero</a>
+  <button id="openAddParking" class="btn btn-orange" onclick="openModal()">Agregar parqueadero</button>
     </div>
 
     <div class="inner-border p-3" style="border-radius:8px;">
       <div class="table-responsive" style="max-height:220px; overflow:auto;">
-        <table class="table table-dark parkings-table mb-0 align-middle">
+          <table class="table table-dark parkings-table mb-0 align-middle">
           <thead>
             <tr>
               <th>Parqueadero</th>
@@ -44,14 +44,14 @@
           </thead>
           <tbody>
             {% for p in parkings %}
-            <tr>
-              <td class="fw-semibold">{{ p.name }}</td>
-              <td class="text-muted small">{{ p.status }}</td>
-              <td class="text-warning">{{ p.price }}</td>
-              <td class="text-muted small">{{ p.time }}</td>
+            <tr data-parking-id="{{ p.id }}">
+              <td class="fw-semibold parking-name" data-parking-id="{{ p.id }}">{{ p.name }}</td>
+              <td class="text-muted small">{{ p.status or 'Libre' }}</td>
+              <td class="text-warning">$3.000 / 10min</td>
+              <td class="text-muted small"><span id="time-{{ p.id }}">00:00:00</span></td>
               <td class="text-end">
                 <div class="form-check form-switch d-inline-block">
-                  <input class="form-check-input" type="checkbox" role="switch" id="switch{{ loop.index }}" {% if p.active %}checked{% endif %}>
+                  <input class="form-check-input parking-toggle" type="checkbox" role="switch" data-parking-id="{{ p.id }}" id="switch{{ loop.index }}" {% if p.active %}checked{% endif %}>
                 </div>
               </td>
             </tr>
@@ -61,8 +61,105 @@
       </div>
     </div>
 
-    <div class="ver-todos mt-3">
-      <a href="#" class="btn btn-orange">Ver todos</a>
+    <!-- Modal: Agregar parqueadero -->
+    <div id="addParkingModal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <button id="closeModal" class="modal-close">×</button>
+        <div class="modal-header text-center">
+          <span class="badge btn-orange">Agregar parqueadero</span>
+        </div>
+        <form id="addParkingForm">
+          <div class="modal-body">
+            <div class="row g-2 mb-3">
+              <div class="col-4"><input name="name" class="form-control" placeholder="Nombre Garaje"></div>
+              <div class="col-4"><input name="phone" class="form-control" placeholder="Teléfono"></div>
+              <div class="col-4"><input name="email" class="form-control" placeholder="Correo electrónico"></div>
+            </div>
+
+            <hr class="my-3"/>
+
+            <div class="row g-2 mb-3">
+              <div class="col-4"><input name="address" class="form-control" placeholder="Dirección"></div>
+              <div class="col-4"><input name="department" class="form-control" placeholder="Departamento"></div>
+              <div class="col-4"><input name="city" class="form-control" placeholder="Ciudad"></div>
+            </div>
+
+            <hr class="my-3"/>
+
+            <div class="row g-2 mb-3">
+              <div class="col-4"><input name="housing_type" class="form-control" placeholder="Tipo de vivienda"></div>
+              <div class="col-4"><input name="size" class="form-control" placeholder="Medidas"></div>
+              <div class="col-4"><input name="features" class="form-control" placeholder="Características"></div>
+            </div>
+
+            <div class="d-flex justify-content-center my-3">
+              <div class="upload-placeholder text-center">
+                <div style="font-size:64px; opacity:0.2;">🏠</div>
+                <div class="text-muted">(foto)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+            <button type="button" id="cancelBtn" class="btn btn-outline-light">Cancelar</button>
+            <button type="submit" class="btn btn-orange">Agregar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- removed Ver todos button per UX request -->
+    <!-- Modal: Ver / Editar parqueadero (top-level) -->
+    <div id="viewParkingModal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <button id="closeViewModal" class="modal-close">×</button>
+        <div class="modal-header text-center">
+          <span class="badge btn-orange">Detalle del parqueadero</span>
+        </div>
+        <form id="viewParkingForm">
+          <div class="modal-body">
+            <input type="hidden" name="id" id="vp-id">
+            <div class="row g-2 mb-3">
+              <div class="col-4"><input id="vp-name" name="name" class="form-control" placeholder="Nombre Garaje"></div>
+              <div class="col-4"><input id="vp-phone" name="phone" class="form-control" placeholder="Teléfono"></div>
+              <div class="col-4"><input id="vp-email" name="email" class="form-control" placeholder="Correo electrónico"></div>
+            </div>
+
+            <hr class="my-3"/>
+
+            <div class="row g-2 mb-3">
+              <div class="col-4"><input id="vp-address" name="address" class="form-control" placeholder="Dirección"></div>
+              <div class="col-4"><input id="vp-department" name="department" class="form-control" placeholder="Departamento"></div>
+              <div class="col-4"><input id="vp-city" name="city" class="form-control" placeholder="Ciudad"></div>
+            </div>
+
+            <hr class="my-3"/>
+
+            <div class="row g-2 mb-3">
+              <div class="col-4"><input id="vp-housing_type" name="housing_type" class="form-control" placeholder="Tipo de vivienda"></div>
+              <div class="col-4"><input id="vp-size" name="size" class="form-control" placeholder="Medidas"></div>
+              <div class="col-4"><input id="vp-features" name="features" class="form-control" placeholder="Características"></div>
+            </div>
+
+            <div class="d-flex justify-content-center my-3">
+              <div id="vp-image-preview" class="upload-placeholder text-center">
+                <div style="font-size:64px; opacity:0.2;">🏠</div>
+                <div class="text-muted">(foto)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+            <div>
+              <button type="button" id="deleteParkingBtn" class="btn btn-outline-light">Eliminar</button>
+            </div>
+            <div>
+              <button type="button" id="cancelViewBtn" class="btn btn-outline-light">Cancelar</button>
+              <button type="submit" class="btn btn-orange">Guardar cambios</button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -71,4 +168,237 @@
   </div>
 </main>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Modal open/close
+const openBtn = document.getElementById('openAddParking');
+const modal = document.getElementById('addParkingModal');
+const closeBtn = document.getElementById('closeModal');
+const cancelBtn = document.getElementById('cancelBtn');
+const form = document.getElementById('addParkingForm');
+
+// debug badge (visible when modal opens)
+let debugBadge = document.getElementById('modalDebug');
+if(!debugBadge){
+  debugBadge = document.createElement('div');
+  debugBadge.id = 'modalDebug';
+  debugBadge.style.position = 'fixed';
+  debugBadge.style.right = '12px';
+  debugBadge.style.bottom = '12px';
+  debugBadge.style.background = '#FFB300';
+  debugBadge.style.color = '#111';
+  debugBadge.style.padding = '6px 10px';
+  debugBadge.style.borderRadius = '6px';
+  debugBadge.style.display = 'none';
+  debugBadge.style.zIndex = 9999;
+  document.body.appendChild(debugBadge);
+}
+
+function openModal(){
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+  // show debug badge briefly
+  debugBadge.textContent = 'modal abierto';
+  debugBadge.style.display = 'block';
+  setTimeout(()=> debugBadge.style.display = 'none', 2000);
+}
+function closeModal(){
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden','true');
+}
+openBtn && openBtn.addEventListener('click', openModal);
+closeBtn && closeBtn.addEventListener('click', closeModal);
+cancelBtn && cancelBtn.addEventListener('click', closeModal);
+
+// Submit via fetch (with inline validation and insertion without reload)
+form && form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const data = new FormData(form);
+  // Basic client-side validation
+  if(!data.get('name') || !data.get('name').trim()){
+    alert('Por favor ingresa el nombre del parqueadero.');
+    return;
+  }
+  try{
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Enviando...';
+    const res = await fetch('/parkings/create', { method: 'POST', body: data });
+    const json = await res.json();
+    if(res.ok && json.success){
+      const parking = json.parking;
+      insertParkingRow(parking);
+      closeModal();
+      form.reset();
+    } else {
+      alert('Error al crear parqueadero: '+(json.error||'error'));
+    }
+  } catch(err){
+    alert('Error de red: '+err.message);
+  } finally{
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Agregar';
+  }
+});
+
+function insertParkingRow(p){
+  try{
+    const tbody = document.querySelector('.parkings-table tbody');
+    if(!tbody) return;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-parking-id', p.id);
+    tr.innerHTML = `
+      <td class="fw-semibold parking-name" data-parking-id="${p.id}">${escapeHtml(p.name || '')}</td>
+      <td class="text-muted small">${p.status || 'Libre'}</td>
+      <td class="text-warning">$3.000 / 10min</td>
+      <td class="text-muted small"><span id="time-${p.id}">00:00:00</span></td>
+      <td class="text-end">
+        <div class="form-check form-switch d-inline-block">
+          <input class="form-check-input parking-toggle" type="checkbox" role="switch" data-parking-id="${p.id}" id="switch-new-${p.id}" ${p.active? 'checked':''}>
+        </div>
+      </td>
+    `;
+    // Prepend the new row so newest appear on top
+    tbody.prepend(tr);
+  }catch(err){
+    console.error('insertParkingRow error', err);
+  }
+}
+
+function escapeHtml(unsafe){
+  return unsafe
+       .replace(/&/g, "&amp;")
+       .replace(/</g, "&lt;")
+       .replace(/>/g, "&gt;")
+       .replace(/\"/g, "&quot;")
+       .replace(/'/g, "&#039;");
+}
+
+</script>
+
+<script>
+// View / Edit modal logic
+const viewModal = document.getElementById('viewParkingModal');
+const closeView = document.getElementById('closeViewModal');
+const cancelViewBtn = document.getElementById('cancelViewBtn');
+const viewForm = document.getElementById('viewParkingForm');
+const deleteBtn = document.getElementById('deleteParkingBtn');
+
+function openViewModal(){
+  viewModal.classList.add('open');
+  viewModal.setAttribute('aria-hidden','false');
+}
+function closeViewModal(){
+  viewModal.classList.remove('open');
+  viewModal.setAttribute('aria-hidden','true');
+}
+closeView && closeView.addEventListener('click', closeViewModal);
+cancelViewBtn && cancelViewBtn.addEventListener('click', closeViewModal);
+
+// When clicking on a parking name, fetch details and open modal
+document.addEventListener('click', async (e)=>{
+  // Ensure we handle clicks on text nodes as well
+  let node = e.target;
+  if(node && node.nodeType === 3) node = node.parentElement;
+  const el = node && node.closest ? node.closest('.parking-name') : null;
+  if(!el) return;
+  const pid = el.getAttribute('data-parking-id') || el.dataset.parkingId;
+  try{
+    // debug visibility
+    console.log('parking-name clicked, id=', pid, 'el=', el);
+    if(debugBadge){ debugBadge.textContent = `click ${pid}`; debugBadge.style.display='block'; setTimeout(()=> debugBadge.style.display='none',900); }
+    if(!viewModal){ console.error('viewModal element not found'); }
+    const res = await fetch(`/parkings/${pid}`);
+    const j = await res.json();
+    if(!res.ok) throw new Error(j.error||'error');
+    const p = j.parking;
+    // populate form
+    document.getElementById('vp-id').value = p.id;
+    document.getElementById('vp-name').value = p.name || '';
+    document.getElementById('vp-phone').value = p.phone || '';
+    document.getElementById('vp-email').value = p.email || '';
+    document.getElementById('vp-address').value = p.address || '';
+    document.getElementById('vp-department').value = p.department || '';
+    document.getElementById('vp-city').value = p.city || '';
+    document.getElementById('vp-housing_type').value = p.housing_type || '';
+    document.getElementById('vp-size').value = p.size || '';
+    document.getElementById('vp-features').value = p.features || '';
+    // image preview
+    const imgPreview = document.getElementById('vp-image-preview');
+    if(p.image_path){
+      imgPreview.innerHTML = `<img src="${p.image_path}" alt="img" style="max-width:160px; max-height:120px; border-radius:6px;">`;
+    } else {
+      imgPreview.innerHTML = `<div style="font-size:64px; opacity:0.2;">🏠</div><div class="text-muted">(foto)</div>`;
+    }
+    openViewModal();
+  }catch(err){
+    alert('Error cargando detalle: '+err.message);
+  }
+});
+
+// Submit update
+viewForm && viewForm.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const pid = document.getElementById('vp-id').value;
+  const data = new FormData(viewForm);
+  try{
+    const res = await fetch(`/parkings/${pid}/update`, { method: 'POST', body: data });
+    const j = await res.json();
+    if(!res.ok) throw new Error(j.error||'error');
+    const p = j.parking;
+    // update row in table
+    const row = document.querySelector(`tr[data-parking-id="${p.id}"]`);
+    if(row){
+      const nameTd = row.querySelector('.parking-name');
+      if(nameTd) nameTd.textContent = p.name || '';
+    }
+    closeViewModal();
+  }catch(err){
+    alert('Error actualizando: '+err.message);
+  }
+});
+
+// Delete
+deleteBtn && deleteBtn.addEventListener('click', async ()=>{
+  if(!confirm('¿Eliminar este parqueadero? Esta acción no se puede deshacer.')) return;
+  const pid = document.getElementById('vp-id').value;
+  try{
+    const res = await fetch(`/parkings/${pid}/delete`, { method: 'POST' });
+    const j = await res.json();
+    if(!res.ok) throw new Error(j.error||'error');
+    // remove row
+    const row = document.querySelector(`tr[data-parking-id="${pid}"]`);
+    if(row && row.parentNode) row.parentNode.removeChild(row);
+    closeViewModal();
+  }catch(err){
+    alert('Error eliminando: '+err.message);
+  }
+});
+</script>
+
+<script>
+// Toggle active handler: send POST JSON to /parkings/<id>/active
+document.addEventListener('change', async (e)=>{
+  const t = e.target;
+  if(t && t.classList && t.classList.contains('parking-toggle')){
+    const pid = t.dataset.parkingId;
+    const active = t.checked;
+    try{
+      const res = await fetch(`/parkings/${pid}/active`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({active})});
+      const j = await res.json();
+      if(!res.ok) throw new Error(j.error||'error');
+      // optionally show little feedback
+      debugBadge.textContent = `parking ${pid} active=${j.active}`;
+      debugBadge.style.display = 'block';
+      setTimeout(()=> debugBadge.style.display='none', 1200);
+    } catch(err){
+      alert('Error actualizando active: '+err.message);
+      // revert switch
+      t.checked = !active;
+    }
+  }
+});
+</script>
 {% endblock %}
