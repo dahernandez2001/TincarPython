@@ -126,10 +126,23 @@ def dashboard():
 
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT nombre, role FROM users WHERE id = ?", (session['user_id'],))
+    cursor.execute("SELECT name, role FROM users WHERE id = ?", (session['user_id'],))
     user = cursor.fetchone()
     conn.close()
+    
+    # Si el usuario es arrendador, pasar una lista de parqueaderos (ejemplo/demo)
+    if user[1] == 'arrendador':
+        # Datos de ejemplo para mostrar en el mockup. En producción deberías
+        # obtenerlos desde una tabla `parkings` o similar en la base de datos.
+        parkings = [
+            {'name': 'Parqueadero 1A', 'status': 'Ocupado', 'price': '$2.000', 'time': '00:10:45', 'active': True},
+            {'name': 'Parqueadero 1B', 'status': 'Libre', 'price': '0', 'time': '00:00:00', 'active': True},
+            {'name': 'Parqueadero 1C', 'status': 'Libre', 'price': '0', 'time': '00:00:00', 'active': False},
+            {'name': 'Parqueadero 1D', 'status': 'Ocupado', 'price': '$80.000', 'time': '06:40:00', 'active': True},
+        ]
+        return render_template('dashboard_landlord.html', nombre=user[0], role=user[1], parkings=parkings)
 
+    # Por defecto, renderizar dashboard genérico
     return render_template('dashboard.html', nombre=user[0], role=user[1])
 
 

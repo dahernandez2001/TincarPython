@@ -120,6 +120,76 @@ p {
 }
 
 
+/* Landlord (arrendador) dashboard styles */
+.landlord-header h2 {
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.landlord-header p {
+  color: #e6e6e6;
+}
+
+.landlord-card {
+  background-color: rgba(20,20,20,0.85);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.parkings-table thead th {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: #ddd;
+  font-size: 13px;
+}
+
+.parkings-table tbody td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border-top: 1px solid rgba(255,255,255,0.03);
+}
+
+.btn-orange {
+  background-color: #FFB300;
+  color: #1A1919;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 700;
+}
+
+.btn-orange:hover { background-color: #e69900; color: #fff }
+
+.table-responsive { scrollbar-width: thin; }
+
+.form-check-input:checked {
+  background-color: #27ae60;
+  border-color: #27ae60;
+}
+
+.ver-todos { display:flex; justify-content:center; }
+
+/* inner border look used in mockup */
+.inner-border {
+  background: linear-gradient(180deg, rgba(16,16,16,0.95), rgba(18,18,18,0.95));
+  border: 2px solid rgba(243, 209, 160, 0.9); /* warm light border */
+  border-radius: 6px;
+}
+
+/* header/nav */
+header { border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 18px; }
+header nav a { color: rgba(255,255,255,0.8); text-decoration:none; }
+header nav a:hover { color: #FFB300 }
+
+/* small adjustments for table appearance */
+.parkings-table thead th { padding: 12px 10px; }
+.parkings-table tbody td { padding: 12px 10px; }
+
+/* custom scrollbar for the inner table */
+.table-responsive::-webkit-scrollbar { height: 8px; width:10px }
+.table-responsive::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px }
+.table-responsive::-webkit-scrollbar-track { background: rgba(0,0,0,0.12); border-radius: 8px }
+
+
 /* ---------- SOCIAL LOGIN ---------- */
 
 .social-login .btn {

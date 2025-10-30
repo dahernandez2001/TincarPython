@@ -8,13 +8,13 @@ auth = Blueprint('auth', __name__)
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        nombre = request.form.get('nombre')
+        name = request.form.get('name')
         email = request.form.get('email')
         password = request.form.get('password')
         role = request.form.get('role', 'conductor')  # valor por defecto si no se selecciona
 
         # Validar que todos los campos estén completos
-        if not nombre or not email or not password:
+        if not name or not email or not password:
             flash('⚠️ Por favor completa todos los campos.', 'warning')
             return redirect(url_for('auth.register'))
 
@@ -32,8 +32,8 @@ def register():
 
         # Crear nuevo usuario
         hashed_password = hash_password(password)
-        cursor.execute("INSERT INTO users (nombre, email, password, role) VALUES (?, ?, ?, ?)",
-                       (nombre, email, hashed_password, role))
+        cursor.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+                       (name, email, hashed_password, role))
         conn.commit()
         conn.close()
 
@@ -53,10 +53,9 @@ def login():
         if not email or not password:
             flash('⚠️ Por favor completa todos los campos.', 'warning')
             return redirect(url_for('auth.login'))
-
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, nombre, email, password FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT id, name, email, password FROM users WHERE email = ?", (email,))
         user = cursor.fetchone()
         conn.close()
 
@@ -68,5 +67,4 @@ def login():
         else:
             flash('❌ Credenciales incorrectas.', 'warning')
             return redirect(url_for('auth.login'))
-
     return render_template('login.html')
