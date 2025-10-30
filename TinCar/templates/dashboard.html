@@ -1,50 +1,47 @@
 {% extends "layout.html" %}
-
 {% block content %}
-<div class="dashboard-container">
-  <!-- Mensaje de bienvenida y opciones -->
-  <div class="welcome-container">
-    <h2>Bienvenido, {{ name }}!</h2>
-    
-    {% if role == "conductor" %}
-      <h3>¿A dónde quieres ir hoy?</h3>
-      <a href="#" class="btn reserve-btn">Apartar Parqueadero</a>
-    {% elif role == "arrendador" %}
-      <h3>Panel de Arrendador</h3>
-      <p>Aquí puedes gestionar tus parqueaderos o ver tus ingresos.</p>
-    {% else %}
-      <p>Rol desconocido: {{ role }}</p>
-    {% endif %}
-    
-    <div class="buttons" style="margin-top: 20px;">
-      <a href="{{ url_for('logout') }}" class="btn logout-btn">Cerrar Sesión</a>
+
+<div class="container py-5 text-center text-light">
+  <!-- Encabezado -->
+  <div class="mb-4">
+    <h1 class="fw-bold" style="color: #FFB300;">Bienvenido, {{ nombre }}</h1>
+    <h5 class="text-secondary">
+      {% if role == "conductor" %}
+        Estás registrado como <span class="fw-semibold text-info">Conductor</span>.
+      {% elif role == "arrendador" %}
+        Estás registrado como <span class="fw-semibold text-success">Arrendador</span>.
+      {% else %}
+        Rol no especificado.
+      {% endif %}
+    </h5>
+  </div>
+
+  <!-- Contenido según rol -->
+  {% if role == "conductor" %}
+  <div class="card bg-dark text-light shadow-lg border-0 mx-auto" style="max-width: 500px;">
+    <div class="card-body">
+      <h4 class="card-title text-warning">🚗 Buscar Parqueaderos Disponibles</h4>
+      <p class="card-text">Explora los parqueaderos disponibles cerca de ti.</p>
+      <a href="#" class="btn btn-warning w-100">Ver mapa de parqueaderos</a>
     </div>
   </div>
 
-  <!-- Mapa independiente (solo visible para conductores) -->
-  {% if role == "conductor" %}
-    <div id="map"></div>
+  {% elif role == "arrendador" %}
+  <div class="card bg-dark text-light shadow-lg border-0 mx-auto" style="max-width: 500px;">
+    <div class="card-body">
+      <h4 class="card-title text-success">🅿️ Administrar tu Parqueadero</h4>
+      <p class="card-text">Publica, actualiza y gestiona tus espacios de parqueo.</p>
+      <a href="#" class="btn btn-success w-100">Ir a mi panel</a>
+    </div>
+  </div>
   {% endif %}
+
+  <!-- Botón de cerrar sesión -->
+  <div class="mt-5">
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light px-4 py-2">
+      Cerrar sesión
+    </a>
+  </div>
 </div>
 
-{% if role == "conductor" %}
-<!-- Leaflet para el mapa -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<script>
-const bogotaLat = 4.7110;
-const bogotaLng = -74.0721;
-
-const map = L.map('map').setView([bogotaLat, bogotaLng], 12);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
-
-L.marker([bogotaLat, bogotaLng]).addTo(map)
-  .bindPopup('Bogotá')
-  .openPopup();
-</script>
-{% endif %}
 {% endblock %}

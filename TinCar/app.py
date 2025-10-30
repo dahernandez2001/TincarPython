@@ -1,11 +1,8 @@
 import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-from routes.auth import auth  # Asegúrate de importar correctamente
-
-app = Flask(__name__)
-app.secret_key = 'clave_super_segura'  # Necesaria para usar flash y sesiones
-app.register_blueprint(auth)
+from routes.auth import auth
+from models import get_connection
 
 # Configuración rutas absolutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +14,9 @@ app = Flask(
 )
 
 app.secret_key = 'clave-secreta'
+
+# Registrar blueprints
+app.register_blueprint(auth)
 DB_NAME = os.path.join(BASE_DIR, 'tincar.db')
 
 
@@ -122,19 +122,21 @@ def login():
 @app.route('/dashboard')
 def dashboard():
     if 'user_id' not in session:
-        return redirect(url_for('login'))
+        return redirect(url_for('auth.login'))
 
-    return render_template(
-        'dashboard.html',
-        name=session.get('name'),
-        role=session.get('role')
-    )
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT nombre, role FROM users WHERE id = ?", (session['user_id'],))
+    user = cursor.fetchone()
+    conn.close()
+
+    return render_template('dashboard.html', nombre=user[0], role=user[1])
 
 
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('auth.login'))
 
 
 # Ejecutar la app
