@@ -1,172 +1,71 @@
-/* === Paleta tomada de la portada === */
-:root {
-  --bg-dark: #0d0d0d;           /* Negro profundo de la imagen */
-  --gradient-start: #ff7a18;    /* Naranja vivo */
-  --gradient-end:   #ffae42;    /* Naranja más claro / amarillento */
-  --text-light: #ffffff;
-  --card-bg: rgba(255, 255, 255, 0.05);
-  --border-light: rgba(255, 255, 255, 0.1);
-  --shadow: 0 0 25px rgba(255, 122, 24, 0.3);
-}
-
 body {
+  background-color: #1A1919;
+  font-family: 'Poppins', sans-serif;
   margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(circle at top right, var(--gradient-end) 0%, var(--bg-dark) 60%);
-  font-family: 'Segoe UI', Helvetica, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  padding: 0;
+  height: 100vh;
 }
 
-/* === Contenedor de formulario === */
-.form-container {
-  background: var(--card-bg);
-  backdrop-filter: blur(10px);
-  padding: 2.5rem;
-  border-radius: 20px;
-  box-shadow: var(--shadow);
-  width: 100%;
-  max-width: 420px;
-  border: 1px solid var(--border-light);
+.hero {
+  background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)),
+              url("../static/img/fondo.jpg") center/cover no-repeat;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
 }
 
-.form-container h2 {
-  font-size: 1.8rem;
-  margin-bottom: 1.5rem;
-  color: var(--text-light);
-  font-weight: 600;
+.logo {
+  width: 180px;
+  height: auto;
+  animation: fadeInDown 1s ease-in-out;
 }
 
-/* === Campos === */
-.form-container input,
-.form-container select {
-  width: 100%;
-  margin-bottom: 1rem;
-  padding: 0.9rem 1rem;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  color: var(--text-light);
-  font-size: 1rem;
+h1 {
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
-.form-container input:focus,
-.form-container select:focus {
-  outline: none;
-  border-color: var(--gradient-start);
-  box-shadow: 0 0 8px var(--gradient-start);
+p {
+  color: #FFEFCB;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
 }
 
-/* === Botón === */
-.form-container button {
-  width: 100%;
-  padding: 0.9rem;
-  background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
+.btn-warning {
+  background-color: #FFB300;
   border: none;
-  border-radius: 12px;
-  color: #000;
-  font-weight: bold;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: transform 0.2s ease;
+  color: #1A1919;
+  font-weight: 600;
+  transition: all 0.3s ease;
 }
 
-.form-container button:hover {
-  transform: scale(1.05);
+.btn-warning:hover {
+  background-color: #E88E2A;
+  color: #fff;
 }
 
-/* === Links === */
-.form-container p, .form-container a {
-  color: var(--text-light);
-  font-size: 0.9rem;
-}
-.form-container a {
-  color: var(--gradient-end);
-  text-decoration: none;
-}
-.form-container a:hover {
-  text-decoration: underline;
+.btn-outline-light {
+  border: 2px solid #fff;
+  color: #fff;
+  font-weight: 600;
+  transition: all 0.3s ease;
 }
 
-
-.btn {
-    display: inline-block;
-    padding: 10px 20px;
-    background-color: #4CAF50; /* verde */
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    font-weight: bold;
-    transition: background-color 0.3s;
+.btn-outline-light:hover {
+  background-color: #FFB300;
+  border-color: #FFB300;
+  color: #1A1919;
 }
 
-.btn:hover {
-    background-color: #45a049;
-}
-
-.logout-btn {
-    background-color: #f44336; /* rojo */
-}
-
-.logout-btn:hover {
-    background-color: #da190b;
-}
-
-
-.dashboard-container {
-    padding: 20px;
-    max-width: 100%;
-}
-
-/* Contenedor de bienvenida y botones */
-.welcome-container {
-    text-align: center; /* Centrado; cambia a left si prefieres */
-    margin-bottom: 20px;
-}
-
-/* Botones generales */
-.btn {
-    display: inline-block;
-    padding: 10px 20px;
-    background-color: #4CAF50;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    font-weight: bold;
-    transition: background-color 0.3s;
-    margin: 5px;
-}
-
-.btn:hover {
-    background-color: #45a049;
-}
-
-/* Botón de cerrar sesión */
-.logout-btn {
-    background-color: #f44336;
-}
-
-.logout-btn:hover {
-    background-color: #da190b;
-}
-
-/* Botón de apartar parqueadero */
-.reserve-btn {
-    background-color: #2196F3;
-}
-
-.reserve-btn:hover {
-    background-color: #0b7dda;
-}
-
-/* Mapa */
-#map {
-    height: 50vh;       /* mitad de la pantalla en alto */
-    width: 50vw;        /* mitad de la pantalla en ancho */
-    border-radius: 10px;
-    border: 2px solid #333;
-    margin: 20px auto;
-    display: block;
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
