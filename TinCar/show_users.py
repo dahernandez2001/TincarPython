@@ -4,6 +4,16 @@ import sqlite3
 conn = sqlite3.connect("database/tincar.db")
 cursor = conn.cursor()
 
+cursor.execute("SELECT id, nombre, email, role FROM users")
+users = cursor.fetchall()
+
+print("Usuarios registrados:")
+for user in users:
+    print(user)
+
+conn.close()
+
+
 try:
     # Verificar que la tabla users existe
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")

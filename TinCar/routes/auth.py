@@ -1,33 +1,40 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 from models import get_connection
-from utils.security import hash_password, check_password
+from utils.security import hash_password
 
 auth = Blueprint('auth', __name__)
 
-@auth.route('/register', methods=['POST'])
+@auth.route('/register', methods=['GET', 'POST'])
 def register():
-    data = request.json
-    nombre = data.get('nombre')
-    correo = data.get('correo')
-    contraseña = hash_password(data.get('contraseña'))
-    telefono = data.get('telefono')
-    rol = data.get('rol')
+    if request.method == 'POST':
+        nombre = request.form['nombre']
+        email = request.form['email']
+        password = request.form['password']
 
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-        INSERT INTO users (nombre, correo, contraseña, telefono, rol)
-        VALUES (%s, %s, %s, %s, %s)
-        """, (nombre, correo, contraseña, telefono, rol))
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Verificar si el correo ya está registrado
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            flash('⚠️ Este correo ya está registrado. Intenta iniciar sesión.', 'warning')
+            conn.close()
+            return redirect(url_for('auth.login'))
+
+        # Crear nuevo usuario
+        hashed_password = hash_password(password)
+        cursor.execute("INSERT INTO users (nombre, email, password) VALUES (?, ?, ?)",
+                       (nombre, email, hashed_password))
         conn.commit()
-        return jsonify({'mensaje': 'Usuario registrado correctamente'}), 201
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 400
-    finally:
-        cur.close()
         conn.close()
+
+        flash('✅ Registro exitoso. Ahora puedes iniciar sesión.', 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template('register.html')
+
 
 @auth.route('/login', methods=['POST'])
 def login():

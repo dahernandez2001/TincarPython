@@ -1,6 +1,11 @@
 import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+from routes.auth import auth  # Asegúrate de importar correctamente
+
+app = Flask(__name__)
+app.secret_key = 'clave_super_segura'  # Necesaria para usar flash y sesiones
+app.register_blueprint(auth)
 
 # Configuración rutas absolutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

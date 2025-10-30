@@ -1,23 +1,35 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<div class="form-container">
-  <h2>Crear Cuenta</h2>
-  <form method="POST">
-    <input type="text" name="name" placeholder="Nombre completo" required>
-    <input type="email" name="email" placeholder="Correo electrónico" required>
-    <input type="password" name="password" placeholder="Contraseña" required>
+<section class="register-section d-flex justify-content-center align-items-center">
+  <div class="register-card p-5 rounded shadow-lg text-center">
+    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar Logo" class="register-logo mb-4">
 
-    <select name="role" required>
-      <option value="" disabled selected>Selecciona un rol</option>
-      <option value="arrendador">Arrendador</option>
-      <option value="conductor">Conductor</option>
-    </select>
+    <h2 class="text-white mb-4">Crear cuenta</h2>
 
-    <button type="submit">Registrar</button>
-  </form>
-  <p>¿Ya tienes cuenta?
-    <a href="{{ url_for('login') }}">Inicia sesión</a>
-  </p>
-</div>
+    <form method="POST" action="{{ url_for('register') }}">
+      <div class="mb-3 text-start">
+        <label for="nombre" class="form-label text-light">Nombre completo</label>
+        <input type="text" id="nombre" name="nombre" class="form-control form-control-lg" placeholder="Tu nombre" required>
+      </div>
+
+      <div class="mb-3 text-start">
+        <label for="email" class="form-label text-light">Correo electrónico</label>
+        <input type="email" id="email" name="email" class="form-control form-control-lg" placeholder="ejemplo@correo.com" required>
+      </div>
+
+      <div class="mb-4 text-start">
+        <label for="password" class="form-label text-light">Contraseña</label>
+        <input type="password" id="password" name="password" class="form-control form-control-lg" placeholder="********" required>
+      </div>
+
+      <button type="submit" class="btn btn-warning btn-lg w-100 fw-bold mb-3">Registrarse</button>
+
+      <p class="text-white-50 mb-0">
+        ¿Ya tienes una cuenta?
+        <a href="{{ url_for('login') }}" class="text-warning fw-semibold">Inicia sesión aquí</a>
+      </p>
+    </form>
+  </div>
+</section>
 {% endblock %}

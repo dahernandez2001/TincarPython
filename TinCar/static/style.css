@@ -69,3 +69,121 @@ p {
     transform: translateY(0);
   }
 }
+
+
+
+/* ---------- LOGIN PAGE ---------- */
+
+.login-section {
+  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)),
+              url("/static/img/fondo.jpg") center/cover no-repeat;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-card {
+  background-color: rgba(44, 44, 44, 0.85);
+  backdrop-filter: blur(5px);
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-logo {
+  width: 120px;
+  height: auto;
+}
+
+.form-control {
+  background-color: #1A1919;
+  border: 1px solid #444;
+  color: #fff;
+}
+
+.form-control:focus {
+  border-color: #FFB300;
+  box-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
+}
+
+.btn-warning {
+  background-color: #FFB300;
+  border: none;
+}
+
+.btn-warning:hover {
+  background-color: #E88E2A;
+}
+
+.text-warning:hover {
+  text-decoration: underline;
+}
+
+
+/* ---------- SOCIAL LOGIN ---------- */
+
+.social-login .btn {
+  background-color: #2C2C2C;
+  border: 1px solid #444;
+  color: #fff;
+  font-weight: 500;
+  padding: 10px;
+  transition: all 0.3s ease;
+}
+
+.social-login .btn:hover {
+  background-color: #3A3A3A;
+}
+
+.icon-social {
+  width: 20px;
+  height: 20px;
+}
+
+
+/* ---------- REGISTER PAGE ---------- */
+
+.register-section {
+  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)),
+              url("/static/img/fondo.jpg") center/cover no-repeat;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.register-card {
+  background-color: rgba(44, 44, 44, 0.85);
+  backdrop-filter: blur(5px);
+  width: 100%;
+  max-width: 420px;
+}
+
+.register-logo {
+  width: 120px;
+  height: auto;
+}
+
+.form-control {
+  background-color: #1A1919;
+  border: 1px solid #444;
+  color: #fff;
+}
+
+.form-control:focus {
+  border-color: #FFB300;
+  box-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
+}
+
+.btn-warning {
+  background-color: #FFB300;
+  border: none;
+}
+
+.btn-warning:hover {
+  background-color: #E88E2A;
+}
+
+.text-warning:hover {
+  text-decoration: underline;
+}
