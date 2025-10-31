@@ -160,6 +160,17 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
+# === Ruta para conductor ===
+@app.route('/driver')
+def driver_index():
+    # Verificar sesión
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+    # Nombre de usuario (compatibilidad con distintos nombres de clave)
+    nombre = session.get('user_name') or session.get('name') or '(usuario)'
+    return render_template('index_driver.html', nombre=nombre)
+
+
 @app.route('/parkings/create', methods=['POST'])
 def create_parking():
     if 'user_id' not in session:

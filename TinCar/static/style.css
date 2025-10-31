@@ -6,6 +6,23 @@ body {
   height: 100vh;
 }
 
+/* Styles from user snippet */
+/* base */
+body { font-family: "Poppins", sans-serif; background-color: #1a1919; }
+
+.navbar-brand span { color: #ffb300; }
+.nav-link.active, .nav-link:hover { color: #ffb300 !important; }
+.card { background-color: #1e1e1e; }
+.info-box { min-width: 120px; }
+.profile-circle { width: 80px; height: 80px; border-radius: 50%; background-color: #d2a676; }
+.map-container iframe { border-radius: 20px; overflow: hidden; }
+.btn-warning { background-color: #ffb300; color: #000; }
+.btn-warning:hover { background-color: #e88e2a; color: #fff; }
+
+/* small adjustments to avoid clashing with existing rules */
+.card.bg-black { background-color: #0f0f0f !important; }
+.map-container { margin-top: 18px; }
+
 .hero {
   background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)),
               url("../static/img/fondo.jpg") center/cover no-repeat;
@@ -117,6 +134,75 @@ p {
 
 .text-warning:hover {
   text-decoration: underline;
+}
+
+/* ---------- DRIVER VIEW STYLES ---------- */
+.driver-wrapper {
+  background: rgba(12,12,12,0.85);
+  border-radius: 18px;
+  padding: 28px;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.03);
+}
+
+.driver-nav a{ color: #fff; margin-right: 18px; text-decoration:none; opacity:0.9 }
+.driver-nav a:hover{ color:#FFB300 }
+
+.driver-title{ font-size:44px; font-weight:800; margin:6px 0 }
+.driver-subtitle{ color:#d8d8d8; margin-bottom:6px }
+
+.driver-avatar{ width:92px; height:92px; border-radius:50%; display:inline-block; border:6px solid rgba(0,0,0,0.25); background:#c9b095 }
+
+.driver-stats{ display:flex; align-items:center }
+.rating-box{ background: rgba(30,30,30,0.9); padding:14px 16px; border-radius:12px; width:140px; color:#fff }
+.rating-box .rating-row{ display:flex; align-items:center; gap:8px; font-size:20px; font-weight:700 }
+.rating-box .star{ color:#FFD34D; font-size:22px }
+.rating-box hr{ border-color: rgba(0,0,0,0.6); margin:8px 0 }
+.rating-box .reservas{ font-size:20px; font-weight:700; color:#fff; text-align:center }
+
+.map-card{ margin-top:14px; background: linear-gradient(180deg, rgba(18,18,18,0.95), rgba(22,22,22,0.95)); padding:18px }
+.map-viewport iframe{ border-radius:12px; border: 6px solid rgba(0,0,0,0.35); }
+
+/* New driver exact-match styles */
+.driver-outer{ background: transparent; padding: 18px }
+.driver-inner{ background: rgba(8,8,8,0.75); border-radius: 20px; padding: 28px; border: 1px solid rgba(255,255,255,0.03); }
+.driver-logo{ height:44px; margin-right:10px }
+.driver-top{ gap: 18px }
+.driver-title{ font-size:48px; font-weight:800; margin:6px 0; color:#fff }
+.driver-subtitle{ color:#d0d0d0; margin-bottom:0 }
+
+.driver-right{ min-width:260px }
+.rating-box-outer{ display:flex; align-items:center; justify-content:center }
+.rating-box-inner{ width:160px; background: rgba(30,30,30,0.95); border-radius:12px; padding:12px 12px; box-shadow: inset 0 -6px 0 rgba(0,0,0,0.25); }
+.rating-top{ display:flex; justify-content:space-between; align-items:center }
+.rating-top .small{ color:#cfcfcf }
+.star{ color:#FFD34D; font-size:20px }
+.rating-value{ font-weight:800; font-size:20px }
+.rating-divider{ height:2px; background: rgba(0,0,0,0.6); margin:10px 0; }
+.rating-bottom .small{ color:#cfcfcf }
+.reservas{ font-size:20px; font-weight:800; margin-top:4px }
+
+.avatar-area{ display:flex; flex-direction:column; align-items:center }
+.avatar-wrap{ width:96px; height:96px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:transparent; }
+.avatar-circle{ width:96px; height:96px; border-radius:50%; display:block }
+.btn-profile{ background:#FFB300; color:#111; padding:8px 14px; border-radius:10px; font-weight:700; display:inline-block }
+
+.map-card{ margin-top:18px; background: transparent; padding: 0 }
+.map-frame{ border-radius:18px; overflow:hidden; border:10px solid rgba(0,0,0,0.45); box-shadow: 0 6px 30px rgba(0,0,0,0.6) inset }
+
+@media (max-width: 768px){
+  .driver-title{ font-size:32px }
+  .avatar-circle{ width:76px; height:76px }
+  .driver-inner{ padding:18px }
+  .driver-right{ min-width: auto }
+  .driver-nav{ display:none }
+}
+
+/* responsive */
+@media (max-width: 768px){
+  .driver-title{ font-size:32px }
+  .driver-avatar{ width:76px; height:76px }
+  .driver-wrapper{ padding:18px }
 }
 
 

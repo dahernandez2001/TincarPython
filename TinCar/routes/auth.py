@@ -55,14 +55,22 @@ def login():
             return redirect(url_for('auth.login'))
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, email, password FROM users WHERE email = ?", (email,))
+        # Obtener también el rol para redirigir según tipo de usuario
+        cursor.execute("SELECT id, name, email, password, role FROM users WHERE email = ?", (email,))
         user = cursor.fetchone()
         conn.close()
 
         if user and check_password(password, user[3]):
+            # Guardar claves de sesión consistentes con el resto de la app
             session['user_id'] = user[0]
             session['user_name'] = user[1]
+            session['name'] = user[1]
+            session['email'] = user[2]
+            session['role'] = user[4]
             flash(f'👋 Bienvenido, {user[1]}', 'success')
+            # Redirigir según rol
+            if user[4] == 'conductor':
+                return redirect(url_for('driver_index'))
             return redirect(url_for('dashboard'))
         else:
             flash('❌ Credenciales incorrectas.', 'warning')
