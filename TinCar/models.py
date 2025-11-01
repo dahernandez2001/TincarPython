@@ -65,22 +65,39 @@ def create_parkings_table():
             size TEXT,
             features TEXT,
             image_path TEXT,
+            latitude REAL,
+            longitude REAL,
             active INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
+
+    # Si la tabla ya existía antes de agregar latitude/longitude, asegurarse de que las columnas estén presentes
+    cursor.execute("PRAGMA table_info(parkings)")
+    cols = [r[1] for r in cursor.fetchall()]
+    if 'latitude' not in cols:
+        try:
+            cursor.execute('ALTER TABLE parkings ADD COLUMN latitude REAL')
+        except Exception:
+            pass
+    if 'longitude' not in cols:
+        try:
+            cursor.execute('ALTER TABLE parkings ADD COLUMN longitude REAL')
+        except Exception:
+            pass
+    conn.commit()
     conn.close()
 
 
 def add_parking(owner_id, name, phone=None, email=None, address=None, department=None, city=None,
-                housing_type=None, size=None, features=None, image_path=None, active=1):
+                housing_type=None, size=None, features=None, image_path=None, latitude=None, longitude=None, active=1):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO parkings (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active))
+        INSERT INTO parkings (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active))
     conn.commit()
     last_id = cursor.lastrowid
     # Recuperar el registro insertado y devolverlo como dict
@@ -110,7 +127,7 @@ def add_parking(owner_id, name, phone=None, email=None, address=None, department
 def get_parkings_by_owner(owner_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, name, phone, email, address, department, city, housing_type, size, features, image_path, active FROM parkings WHERE owner_id = ?', (owner_id,))
+    cursor.execute('SELECT id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active FROM parkings WHERE owner_id = ?', (owner_id,))
     rows = cursor.fetchall()
     conn.close()
     # Convert to list of dicts
@@ -118,7 +135,7 @@ def get_parkings_by_owner(owner_id):
     for r in rows:
         parkings.append({
             'id': r[0], 'name': r[1], 'phone': r[2], 'email': r[3], 'address': r[4], 'department': r[5], 'city': r[6],
-            'housing_type': r[7], 'size': r[8], 'features': r[9], 'image_path': r[10], 'active': bool(r[11])
+            'housing_type': r[7], 'size': r[8], 'features': r[9], 'image_path': r[10], 'latitude': r[11], 'longitude': r[12], 'active': bool(r[13])
         })
     return parkings
 
@@ -126,20 +143,22 @@ def get_parkings_by_owner(owner_id):
 def get_parking(parking_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, active, created_at FROM parkings WHERE id = ?', (parking_id,))
+    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active, created_at FROM parkings WHERE id = ?', (parking_id,))
     r = cursor.fetchone()
     conn.close()
     if not r:
         return None
     return {
         'id': r[0], 'owner_id': r[1], 'name': r[2], 'phone': r[3], 'email': r[4], 'address': r[5], 'department': r[6], 'city': r[7],
-        'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11], 'active': bool(r[12]), 'created_at': r[13]
+        'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11], 'latitude': r[12], 'longitude': r[13], 'active': bool(r[14]), 'created_at': r[15]
     }
 
 
 def update_parking(parking_id, **fields):
     # fields: name, phone, email, address, department, city, housing_type, size, features, image_path, active
     allowed = ['name','phone','email','address','department','city','housing_type','size','features','image_path','active']
+    # Allow updating coordinates
+    allowed += ['latitude','longitude']
     keys = [k for k in fields.keys() if k in allowed]
     if not keys:
         return False
@@ -179,3 +198,93 @@ def get_user_by_email(email):
     user = cursor.fetchone()
     conn.close()
     return user
+
+
+def create_reservations_table():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id INTEGER NOT NULL,
+            parking_id INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def create_reviews_table():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reviewer_id INTEGER NOT NULL,
+            driver_id INTEGER NOT NULL,
+            parking_id INTEGER,
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def add_reservation(driver_id, parking_id, status='pending'):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO reservations (driver_id, parking_id, status) VALUES (?, ?, ?)', (driver_id, parking_id, status))
+    conn.commit()
+    last_id = cursor.lastrowid
+    cursor.execute('SELECT id, driver_id, parking_id, status, created_at FROM reservations WHERE id = ?', (last_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3], 'created_at': r[4]}
+
+
+def get_reservations_count_by_driver(driver_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM reservations WHERE driver_id = ?', (driver_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return int(row[0]) if row else 0
+
+
+def add_review(reviewer_id, driver_id, parking_id, rating, comment=None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO reviews (reviewer_id, driver_id, parking_id, rating, comment) VALUES (?, ?, ?, ?, ?)', (reviewer_id, driver_id, parking_id, rating, comment))
+    conn.commit()
+    conn.close()
+
+
+def get_rating_sum_for_driver(driver_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT SUM(rating) FROM reviews WHERE driver_id = ?', (driver_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def get_active_parkings():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude FROM parkings WHERE active = 1')
+    rows = cursor.fetchall()
+    conn.close()
+    parkings = []
+    for r in rows:
+        parkings.append({
+            'id': r[0], 'owner_id': r[1], 'name': r[2], 'phone': r[3], 'email': r[4], 'address': r[5],
+            'department': r[6], 'city': r[7], 'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11],
+            'latitude': r[12], 'longitude': r[13]
+        })
+    return parkings

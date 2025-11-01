@@ -6,6 +6,8 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from routes.auth import auth
 from models import get_connection, create_parkings_table, add_parking, get_parkings_by_owner
 from models import get_parking, update_parking, delete_parking
+from models import create_reservations_table, create_reviews_table, get_active_parkings, get_reservations_count_by_driver, get_rating_sum_for_driver
+from models import add_reservation
 
 # Configuración rutas absolutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -204,7 +206,13 @@ def create_parking():
             image_path = f"/static/uploads/{unique_name}"
 
     try:
-        parking = add_parking(owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, 1)
+        # support optional latitude/longitude in the creation form
+        latitude = form.get('latitude') or None
+        longitude = form.get('longitude') or None
+        # use keyword args to avoid positional mismatch after adding lat/lng
+        parking = add_parking(owner_id=owner_id, name=name, phone=phone, email=email, address=address,
+                              department=department, city=city, housing_type=housing_type, size=size,
+                              features=features, image_path=image_path, latitude=latitude, longitude=longitude, active=1)
         if not parking:
             return jsonify({'success': False, 'error': 'No se pudo crear el parqueadero'}), 500
         return jsonify({'success': True, 'parking': parking})
@@ -240,8 +248,21 @@ def set_parking_active(parking_id):
             return {'error': 'forbidden'}, 403
         cur.execute('UPDATE parkings SET active = ? WHERE id = ?', (active_value, parking_id))
         conn.commit()
+        # fetch updated parking info to return
+        cur.execute('SELECT id, name, address, latitude, longitude FROM parkings WHERE id = ?', (parking_id,))
+        parking_info = cur.fetchone()
         conn.close()
-        return {'success': True, 'id': parking_id, 'active': bool(active_value)}
+        if not parking_info:
+            return {'error': 'not found'}, 404
+        return {
+            'success': True,
+            'id': parking_info[0],
+            'name': parking_info[1],
+            'address': parking_info[2],
+            'latitude': parking_info[3],
+            'longitude': parking_info[4],
+            'active': bool(active_value)
+        }
     except Exception as e:
         return {'error': str(e)}, 500
 
@@ -313,6 +334,47 @@ def parking_delete(parking_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/parkings/active', methods=['GET'])
+def api_active_parkings():
+    # devuelve los parqueaderos activos para que el conductor los vea en el mapa
+    try:
+        parkings = get_active_parkings()
+        return jsonify({'success': True, 'parkings': parkings})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/driver/stats', methods=['GET'])
+def api_driver_stats():
+    if 'user_id' not in session:
+        return jsonify({'error': 'not authenticated'}), 401
+    driver_id = session['user_id']
+    try:
+        reservations = get_reservations_count_by_driver(driver_id)
+        rating_sum = get_rating_sum_for_driver(driver_id)
+        return jsonify({'success': True, 'reservations_count': reservations, 'rating_sum': rating_sum})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reservations', methods=['POST'])
+def create_reservation():
+    if 'user_id' not in session:
+        return jsonify({'error': 'not authenticated'}), 401
+    data = request.get_json(silent=True) or {}
+    if 'parking_id' not in data:
+        return jsonify({'error': 'missing parking_id'}), 400
+    try:
+        driver_id = session['user_id']
+        parking_id = data['parking_id']
+        reservation = add_reservation(driver_id, parking_id)
+        if not reservation:
+            return jsonify({'error': 'could not create reservation'}), 500
+        return jsonify({'success': True, 'reservation': reservation})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # Ejecutar la app
 if __name__ == '__main__':
     create_users_table()
@@ -321,4 +383,11 @@ if __name__ == '__main__':
         create_parkings_table()
     except Exception:
         pass
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Crear tablas nuevas para reservas y reseñas
+    try:
+        create_reservations_table()
+        create_reviews_table()
+    except Exception:
+        pass
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
