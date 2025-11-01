@@ -12,44 +12,56 @@ document.addEventListener("DOMContentLoaded", () => {
   }).addTo(map);
 
   // Cargar parkings activos desde la API
-  fetch('/api/parkings/active')
-    .then(r => {
-      if (!r.ok) {
-        throw new Error(`HTTP error! status: ${r.status}`);
-      }
-      return r.json();
-    })
-    .then(data => {
-      if (!data.success) {
-        console.error('Error cargando parkings:', data.error);
-        return;
-      }
+  // Mejor estrategia: cargar sólo parkings dentro del viewport actual y refrescar cuando el mapa se mueva.
+  const markersGroup = L.layerGroup().addTo(map);
+
+  function debounce(fn, wait){
+    let t = null;
+    return function(...args){
+      clearTimeout(t);
+      t = setTimeout(()=> fn.apply(this, args), wait);
+    };
+  }
+
+  async function loadParkingsForBounds(){
+    const b = map.getBounds();
+    const minLat = b.getSouth();
+    const minLng = b.getWest();
+    const maxLat = b.getNorth();
+    const maxLng = b.getEast();
+    const bbox = `${minLat},${minLng},${maxLat},${maxLng}`;
+    try{
+      const r = await fetch('/api/parkings/active?bbox='+encodeURIComponent(bbox));
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const data = await r.json();
+      if(!data.success) { console.error('Error cargando parkings:', data.error); return; }
       const parkings = data.parkings || [];
+      // limpiar markers existentes
+      markersGroup.clearLayers();
       parkings.forEach(p => {
-        const lat = p.latitude;
-        const lng = p.longitude;
-        if (lat && lng) {
-          const marker = L.marker([lat, lng]).addTo(map);
-          const popupHtml = `
-            <strong>${p.name || 'Parqueadero'}</strong><br>
-            ${p.address || ''}<br>
-            <button onclick="reserveParking(${p.id})">Reservar</button>
-          `;
+        const lat = p.latitude !== null && p.latitude !== undefined ? parseFloat(p.latitude) : null;
+        const lng = p.longitude !== null && p.longitude !== undefined ? parseFloat(p.longitude) : null;
+        if(!isNaN(lat) && !isNaN(lng)){
+          // usar circleMarker (más ligero) y color según disponibilidad
+          const isAvailable = true; // endpoint ya filtra por active
+          const marker = L.circleMarker([lat,lng], { radius: 6, color: isAvailable ? '#2b8a3e' : '#b30000', fillOpacity: 0.9 });
+          const fullAddress = `${p.address || ''}${p.city ? ', ' + p.city : ''}${p.department ? ', ' + p.department : ''}`;
+          const popupHtml = `<strong>${p.name || 'Parqueadero'}</strong><br>${fullAddress || ''}<br><button class="btn-reserve" onclick="reserveParking(${p.id})">Reservar</button>`;
           marker.bindPopup(popupHtml);
-        } else {
-          // Si no hay coordenadas, se podría ampliar para geocodificar la dirección.
-          console.warn('Parqueadero sin coordenas, omitiendo en mapa:', p.name);
+          markersGroup.addLayer(marker);
         }
       });
-      // Ajustar bounds si hay marcadores
-      const markers = parkings.filter(p => p.latitude && p.longitude);
-      if (markers.length) {
-        const latlngs = markers.map(p => [p.latitude, p.longitude]);
-        const bounds = L.latLngBounds(latlngs);
-        map.fitBounds(bounds, {padding: [50, 50]});
-      }
-    })
-    .catch(err => console.error('Fetch parkings failed:', err));
+    }catch(err){
+      console.error('Error loading parkings for bounds:', err);
+    }
+  }
+
+  const debouncedLoad = debounce(loadParkingsForBounds, 400);
+  // cargar inicialmente
+  loadParkingsForBounds();
+  // recargar cuando el usuario termine de mover/zoom
+  map.on('moveend', debouncedLoad);
+  map.on('zoomend', debouncedLoad);
 
   // Cargar estadísticas del conductor (reservas y calificación)
   fetch('/api/driver/stats')
@@ -82,15 +94,15 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           });
           const parkings = data.parkings || [];
-          parkings.forEach(p => {
-            const lat = p.latitude;
-            const lng = p.longitude;
-            if (lat && lng) {
-              const marker = L.marker([lat, lng]).addTo(map);
-              const popupHtml = `<strong>${p.name || 'Parqueadero'}</strong><br>${p.address || ''}`;
-              marker.bindPopup(popupHtml);
-            }
-          });
+            parkings.forEach(p => {
+              const lat = p.latitude !== null && p.latitude !== undefined ? parseFloat(p.latitude) : null;
+              const lng = p.longitude !== null && p.longitude !== undefined ? parseFloat(p.longitude) : null;
+              if (!isNaN(lat) && !isNaN(lng)) {
+                const marker = L.marker([lat, lng]).addTo(map);
+                const popupHtml = `<strong>${p.name || 'Parqueadero'}</strong><br>${p.address || ''}<br><button class="btn-reserve" onclick="reserveParking(${p.id})">Reservar</button>`;
+                marker.bindPopup(popupHtml);
+              }
+            });
         } else {
           console.error('Error cargando garajes activos:', data.error);
         }
@@ -124,3 +136,33 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshActiveParkings();
   });
 });
+    // Exponer función global para que los popups puedan llamar a la reserva
+    window.reserveParking = function(parkingId){
+      if(!parkingId){
+        alert('ID de parqueadero inválido');
+        return;
+      }
+      // Confirmación mínima
+      if(!confirm('¿Deseas reservar este parqueadero ahora?')) return;
+      fetch('/api/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parking_id: parkingId })
+      })
+      .then(r => r.json().then(j => ({ok: r.ok, status: r.status, json: j})))
+      .then(({ok, json}) => {
+        if(ok && json.success){
+          alert('Reserva creada correctamente. ID: ' + (json.reservation && json.reservation.id ? json.reservation.id : 'N/A'));
+          // opción: refrescar estadísticas del conductor
+          fetch('/api/driver/stats').then(r=>r.json()).then(d=>{
+            if(d.success){
+              const countEl = document.getElementById('reservations-count');
+              if(countEl) countEl.textContent = d.reservations_count || 0;
+            }
+          }).catch(()=>{});
+        } else {
+          alert('No se pudo crear la reserva: ' + (json.error || 'error'));
+        }
+      })
+      .catch(err => alert('Error al crear reserva: '+err.message));
+    };

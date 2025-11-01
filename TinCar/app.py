@@ -8,6 +8,8 @@ from models import get_connection, create_parkings_table, add_parking, get_parki
 from models import get_parking, update_parking, delete_parking
 from models import create_reservations_table, create_reviews_table, get_active_parkings, get_reservations_count_by_driver, get_rating_sum_for_driver
 from models import add_reservation
+from utils.geocode import geocode_location
+import requests
 
 # Configuración rutas absolutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -207,15 +209,43 @@ def create_parking():
 
     try:
         # support optional latitude/longitude in the creation form
-        latitude = form.get('latitude') or None
-        longitude = form.get('longitude') or None
+        latitude_raw = form.get('latitude') or None
+        longitude_raw = form.get('longitude') or None
+        try:
+            latitude = float(latitude_raw) if latitude_raw not in (None, '', 'None') else None
+        except Exception:
+            latitude = None
+        try:
+            longitude = float(longitude_raw) if longitude_raw not in (None, '', 'None') else None
+        except Exception:
+            longitude = None
+        # Si no vienen coordenadas, intentar geocodificar usando departamento/ciudad/dirección
+        if (latitude is None or longitude is None) and (department or city or address):
+            # country_hint es opcional; ajustar según el país objetivo si se desea
+            g_lat, g_lon = geocode_location(department=department, city=city, address=address, country_hint=None)
+            if g_lat is not None and g_lon is not None:
+                # Sólo rellenar los que falten
+                if latitude is None:
+                    latitude = g_lat
+                if longitude is None:
+                    longitude = g_lon
         # use keyword args to avoid positional mismatch after adding lat/lng
         parking = add_parking(owner_id=owner_id, name=name, phone=phone, email=email, address=address,
                               department=department, city=city, housing_type=housing_type, size=size,
                               features=features, image_path=image_path, latitude=latitude, longitude=longitude, active=1)
         if not parking:
             return jsonify({'success': False, 'error': 'No se pudo crear el parqueadero'}), 500
-        return jsonify({'success': True, 'parking': parking})
+        # obtener registro completo (incluye latitude/longitude)
+        try:
+            full = get_parking(parking['id'])
+        except Exception:
+            full = None
+        resp = {'success': True, 'parking': full or parking}
+        # indicar si la geocodificación falló y por eso faltan coordenadas
+        if not full or full.get('latitude') is None or full.get('longitude') is None:
+            resp['geocode_failed'] = True
+            resp['message'] = 'No se pudieron obtener coordenadas desde la dirección; por favor añade latitud/longitud manualmente si es necesario.'
+        return jsonify(resp)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -293,6 +323,15 @@ def parking_update(parking_id):
     for key in ['name','phone','email','address','department','city','housing_type','size','features']:
         if key in form:
             data[key] = form.get(key)
+    # permitir actualizar coordenadas desde el modal de edición
+    for key in ['latitude','longitude']:
+        if key in form:
+            # intentar parsear a float si existe
+            raw = form.get(key)
+            try:
+                data[key] = float(raw) if raw not in (None, '', 'None') else None
+            except Exception:
+                data[key] = None
     # image handling
     if 'image' in request.files:
         img = request.files.get('image')
@@ -311,9 +350,30 @@ def parking_update(parking_id):
             return jsonify({'error':'not found'}), 404
         if p['owner_id'] != session['user_id']:
             return jsonify({'error':'forbidden'}), 403
+        # Si no se envían coordenadas explícitas en el form, intentar geocodificar
+        need_geo = False
+        if 'latitude' not in data or data.get('latitude') in (None, ''):
+            need_geo = True
+        if 'longitude' not in data or data.get('longitude') in (None, ''):
+            need_geo = True
+        if need_geo:
+            addr = data.get('address') or p.get('address')
+            dept = data.get('department') or p.get('department')
+            cityv = data.get('city') or p.get('city')
+            g_lat, g_lon = geocode_location(department=dept, city=cityv, address=addr, country_hint=None)
+            if g_lat is not None and g_lon is not None:
+                # sólo añadir las coordenadas que falten
+                if not data.get('latitude'):
+                    data['latitude'] = g_lat
+                if not data.get('longitude'):
+                    data['longitude'] = g_lon
         update_parking(parking_id, **data)
         p2 = get_parking(parking_id)
-        return jsonify({'success': True, 'parking': p2})
+        resp = {'success': True, 'parking': p2}
+        if p2.get('latitude') is None or p2.get('longitude') is None:
+            resp['geocode_failed'] = True
+            resp['message'] = 'No se pudieron obtener coordenadas desde la dirección; por favor añade latitud/longitud manualmente si es necesario.'
+        return jsonify(resp)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -338,10 +398,87 @@ def parking_delete(parking_id):
 def api_active_parkings():
     # devuelve los parqueaderos activos para que el conductor los vea en el mapa
     try:
-        parkings = get_active_parkings()
+        # soportar filtro por bbox (minLat,minLng,maxLat,maxLng)
+        bbox = request.args.get('bbox')
+        if bbox:
+            try:
+                parts = [float(x) for x in bbox.split(',')]
+                if len(parts) == 4:
+                    min_lat, min_lng, max_lat, max_lng = parts
+                else:
+                    raise ValueError('bbox must have 4 numbers')
+            except Exception:
+                return jsonify({'success': False, 'error': 'invalid bbox'}), 400
+            conn = get_connection()
+            cur = conn.cursor()
+            # latitude between min_lat and max_lat and longitude between min_lng and max_lng
+            cur.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude FROM parkings WHERE active = 1 AND latitude IS NOT NULL AND longitude IS NOT NULL AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?', (min_lat, max_lat, min_lng, max_lng))
+            rows = cur.fetchall()
+            conn.close()
+            parkings = []
+            for r in rows:
+                parkings.append({
+                    'id': r[0], 'owner_id': r[1], 'name': r[2], 'phone': r[3], 'email': r[4], 'address': r[5],
+                    'department': r[6], 'city': r[7], 'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11],
+                    'latitude': r[12], 'longitude': r[13]
+                })
+        else:
+            parkings = get_active_parkings()
+        # Para mejorar la precisión del mapa: intentar geocodificar y persistir coordenadas
+        updated = False
+        for p in parkings:
+            lat = p.get('latitude')
+            lon = p.get('longitude')
+            if lat is None or lon is None:
+                # Intentar geocodificar con address/city/department
+                g_lat, g_lon = geocode_location(department=p.get('department'), city=p.get('city'), address=p.get('address'))
+                if g_lat is not None and g_lon is not None:
+                    try:
+                        update_parking(p['id'], latitude=g_lat, longitude=g_lon)
+                        p['latitude'] = g_lat
+                        p['longitude'] = g_lon
+                        updated = True
+                    except Exception:
+                        # si no se puede persistir, igual devolver las coordenadas calculadas
+                        p['latitude'] = g_lat
+                        p['longitude'] = g_lon
+        # Si hubo actualizaciones, podríamos volver a obtener la lista; no es necesario
         return jsonify({'success': True, 'parkings': parkings})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/import_locations', methods=['POST'])
+def admin_import_locations():
+    """
+    Endpoint (privado) para importar un JSON de localidades (departamento -> ciudades).
+    Recibe JSON body: { "url": "https://raw.../file.json" }
+    Guarda el archivo en static/data/colombia_locations.json
+    """
+    if 'user_id' not in session:
+        return jsonify({'error': 'not authenticated'}), 401
+    # simple permiso: solo arrendadores (puedes ajustarlo)
+    if session.get('role') != 'arrendador':
+        return jsonify({'error': 'forbidden'}), 403
+    data = request.get_json(silent=True) or {}
+    url = data.get('url')
+    if not url:
+        return jsonify({'error': 'missing url'}), 400
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        js = r.json()
+        # validar forma básica: debe ser un dict con listas
+        if not isinstance(js, dict):
+            return jsonify({'error': 'invalid json format'}), 400
+        # guardar en static/data
+        out_path = os.path.join(BASE_DIR, 'static', 'data', 'colombia_locations.json')
+        with open(out_path, 'w', encoding='utf-8') as f:
+            import json
+            json.dump(js, f, ensure_ascii=False, indent=2)
+        return jsonify({'success': True, 'message': 'Imported file saved.'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/driver/stats', methods=['GET'])

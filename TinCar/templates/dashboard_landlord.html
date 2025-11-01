@@ -80,8 +80,22 @@
 
             <div class="row g-2 mb-3">
               <div class="col-4"><input name="address" class="form-control" placeholder="Dirección"></div>
-              <div class="col-4"><input name="department" class="form-control" placeholder="Departamento"></div>
-              <div class="col-4"><input name="city" class="form-control" placeholder="Ciudad"></div>
+              <div class="col-4">
+                <select id="add-department" name="department" class="form-control">
+                  <option value="">Departamento</option>
+                </select>
+              </div>
+              <div class="col-4">
+                <select id="add-city" name="city" class="form-control">
+                  <option value="">Ciudad / Municipio</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <!-- Campos para coordenadas (latitud / longitud) -->
+              <div class="col-6"><input name="latitude" class="form-control" placeholder="Latitud (ej: 4.60971)"></div>
+              <div class="col-6"><input name="longitude" class="form-control" placeholder="Longitud (ej: -74.08175)"></div>
             </div>
 
             <hr class="my-3"/>
@@ -129,8 +143,16 @@
 
             <div class="row g-2 mb-3">
               <div class="col-4"><input id="vp-address" name="address" class="form-control" placeholder="Dirección"></div>
-              <div class="col-4"><input id="vp-department" name="department" class="form-control" placeholder="Departamento"></div>
-              <div class="col-4"><input id="vp-city" name="city" class="form-control" placeholder="Ciudad"></div>
+              <div class="col-4">
+                <select id="vp-department" name="department" class="form-control">
+                  <option value="">Departamento</option>
+                </select>
+              </div>
+              <div class="col-4">
+                <select id="vp-city" name="city" class="form-control">
+                  <option value="">Ciudad / Municipio</option>
+                </select>
+              </div>
             </div>
 
             <hr class="my-3"/>
@@ -139,6 +161,12 @@
               <div class="col-4"><input id="vp-housing_type" name="housing_type" class="form-control" placeholder="Tipo de vivienda"></div>
               <div class="col-4"><input id="vp-size" name="size" class="form-control" placeholder="Medidas"></div>
               <div class="col-4"><input id="vp-features" name="features" class="form-control" placeholder="Características"></div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <!-- Campos de coordenadas para edición -->
+              <div class="col-6"><input id="vp-latitude" name="latitude" class="form-control" placeholder="Latitud"></div>
+              <div class="col-6"><input id="vp-longitude" name="longitude" class="form-control" placeholder="Longitud"></div>
             </div>
 
             <div class="d-flex justify-content-center my-3">
@@ -222,6 +250,15 @@ form && form.addEventListener('submit', async (e)=>{
     alert('Por favor ingresa el nombre del parqueadero.');
     return;
   }
+  // Validar que departamento y ciudad estén seleccionados
+  if(!data.get('department') || !data.get('department').trim()){
+    alert('Por favor selecciona un departamento.');
+    return;
+  }
+  if(!data.get('city') || !data.get('city').trim()){
+    alert('Por favor selecciona una ciudad.');
+    return;
+  }
   try{
     submitBtn.disabled = true;
     submitBtn.textContent = 'Enviando...';
@@ -232,6 +269,9 @@ form && form.addEventListener('submit', async (e)=>{
       insertParkingRow(parking);
       closeModal();
       form.reset();
+      if(json.geocode_failed){
+        alert(json.message || 'La geocodificación no encontró coordenadas; por favor edita el parqueadero y agrega latitud/longitud manualmente.');
+      }
     } else {
       alert('Error al crear parqueadero: '+(json.error||'error'));
     }
@@ -355,6 +395,9 @@ viewForm && viewForm.addEventListener('submit', async (e)=>{
       if(nameTd) nameTd.textContent = p.name || '';
     }
     closeViewModal();
+    if(j.geocode_failed){
+      alert(j.message || 'La geocodificación no encontró coordenadas; por favor agrega latitud/longitud manualmente.');
+    }
   }catch(err){
     alert('Error actualizando: '+err.message);
   }
@@ -375,6 +418,76 @@ deleteBtn && deleteBtn.addEventListener('click', async ()=>{
   }catch(err){
     alert('Error eliminando: '+err.message);
   }
+});
+</script>
+
+<script>
+// Cargar lista de departamentos/ciudades y poblar selects del modal Agregar/Editar
+document.addEventListener('DOMContentLoaded', ()=>{
+  const deptSelects = [document.getElementById('add-department'), document.getElementById('vp-department')];
+  const citySelects = [document.getElementById('add-city'), document.getElementById('vp-city')];
+
+  fetch('/static/data/colombia_locations.json')
+    .then(r => r.json())
+    .then(data => {
+      const departments = Object.keys(data).sort();
+      deptSelects.forEach(sel => {
+        if(!sel) return;
+        // limpiar excepto la opción por defecto
+        sel.innerHTML = '<option value="">Departamento</option>';
+        departments.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          sel.appendChild(opt);
+        });
+        // si existe un valor prellenado (ej. en edición), intentar seleccionarlo
+        if(sel.dataset && sel.dataset.selected){
+          sel.value = sel.dataset.selected;
+        }
+        sel.addEventListener('change', (e)=>{
+          const dep = e.target.value;
+          const cities = data[dep] || [];
+          // encontrar el city select correspondiente (match by id prefix: add- vs vp-)
+          const id = e.target.id.startsWith('add-') ? 'add-city' : 'vp-city';
+          const citySel = document.getElementById(id);
+          if(!citySel) return;
+          citySel.innerHTML = '<option value="">Ciudad / Municipio</option>';
+          cities.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; citySel.appendChild(o); });
+        });
+      });
+
+      // Cuando se abre el view modal, si el departamento ya está en el registro, poblar ciudades
+      const openView = document.querySelectorAll('.parking-name');
+    })
+    .catch(err=>{ console.warn('No se pudo cargar lista de departamentos/ciudades:', err); });
+
+  // Cuando se abre el view modal (click en nombre), se llenan selects si es necesario (el flujo existente
+  // asigna los valores en los inputs; aquí nos aseguramos de que las opciones existan y se seleccionen)
+  document.addEventListener('click', async (e)=>{
+    let node = e.target;
+    if(node && node.nodeType === 3) node = node.parentElement;
+    const el = node && node.closest ? node.closest('.parking-name') : null;
+    if(!el) return;
+    const pid = el.getAttribute('data-parking-id') || el.dataset.parkingId;
+    try{
+      const res = await fetch(`/parkings/${pid}`);
+      const j = await res.json();
+      if(!res.ok) throw new Error(j.error||'error');
+      const p = j.parking;
+      // Asegurar selects poblados
+      const depSel = document.getElementById('vp-department');
+      const citySel = document.getElementById('vp-city');
+      if(depSel){
+        depSel.value = p.department || '';
+        // disparar evento change para poblar ciudades
+        const ev = new Event('change');
+        depSel.dispatchEvent(ev);
+        // esperar un tick y seleccionar ciudad si existe
+        setTimeout(()=>{ if(citySel){ citySel.value = p.city || ''; } }, 50);
+      }
+    }catch(err){ /* no bloquear la UI */ }
+  });
 });
 </script>
 
