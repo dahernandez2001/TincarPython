@@ -517,7 +517,20 @@ def create_reservation():
     try:
         driver_id = session['user_id']
         parking_id = data['parking_id']
-        reservation = add_reservation(driver_id, parking_id)
+        # aceptar duration_minutes (min 10) y eta_minutes (>=0)
+        try:
+            duration = int(data.get('duration_minutes', 10))
+        except Exception:
+            duration = 10
+        if duration < 10:
+            duration = 10
+        try:
+            eta = int(data.get('eta_minutes', 0))
+        except Exception:
+            eta = 0
+        if eta < 0:
+            eta = 0
+        reservation = add_reservation(driver_id, parking_id, duration_minutes=duration, eta_minutes=eta)
         if not reservation:
             return jsonify({'error': 'could not create reservation'}), 500
         return jsonify({'success': True, 'reservation': reservation})

@@ -115,23 +115,27 @@ document.addEventListener("DOMContentLoaded", () => {
   // no separate DOMContentLoaded listener here; initial load already performed
 });
     // Exponer función global para que los popups puedan llamar a la reserva
-    window.reserveParking = function(parkingId){
+    window.reserveParking = function(parkingId, durationMinutes, etaMinutes){
       if(!parkingId){
         alert('ID de parqueadero inválido');
         return;
       }
-      // Confirmación mínima
-      if(!confirm('¿Deseas reservar este parqueadero ahora?')) return;
+      // Normalizar y validaciones mínimas
+      try{ durationMinutes = parseInt(durationMinutes); }catch(e){ durationMinutes = 10; }
+      if(isNaN(durationMinutes) || durationMinutes < 10) durationMinutes = 10;
+      try{ etaMinutes = parseInt(etaMinutes); }catch(e){ etaMinutes = 0; }
+      if(isNaN(etaMinutes) || etaMinutes < 0) etaMinutes = 0;
+      if(!confirm(`Reservar ${durationMinutes} min. ¿Confirmas?`)) return;
       fetch('/api/reservations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parking_id: parkingId })
+        body: JSON.stringify({ parking_id: parkingId, duration_minutes: durationMinutes, eta_minutes: etaMinutes })
       })
       .then(r => r.json().then(j => ({ok: r.ok, status: r.status, json: j})))
       .then(({ok, json}) => {
         if(ok && json.success){
           alert('Reserva creada correctamente. ID: ' + (json.reservation && json.reservation.id ? json.reservation.id : 'N/A'));
-          // opción: refrescar estadísticas del conductor
+          // refrescar estadísticas del conductor
           fetch('/api/driver/stats').then(r=>r.json()).then(d=>{
             if(d.success){
               const countEl = document.getElementById('reservations-count');
@@ -199,7 +203,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if(!reserveBtn) return;
         reserveBtn.textContent = 'Reservar';
         reserveBtn.onclick = function(){
-          window.reserveParking(p.id);
+          const durEl = document.getElementById('dp-duration');
+          const etaEl = document.getElementById('dp-eta');
+          const dur = durEl ? parseInt(durEl.value) : 10;
+          const eta = etaEl ? parseInt(etaEl.value) : 0;
+          window.reserveParking(p.id, dur, eta);
           closeDriverModal();
         };
       }
@@ -239,7 +247,12 @@ document.addEventListener("DOMContentLoaded", () => {
               };
               // mostrar info de reserva en el placeholder
               const ri = document.getElementById('dp-reservation-info');
-              if(ri) ri.textContent = `Reserva existente (ID: ${data.reservation.id}) - estado: ${data.reservation.status}`;
+              if(ri){
+                let text = `Reserva existente (ID: ${data.reservation.id}) - estado: ${data.reservation.status}`;
+                if(data.reservation.duration_minutes) text += ` · duración: ${data.reservation.duration_minutes} min`;
+                if(data.reservation.eta_minutes !== undefined) text += ` · ETA: ${data.reservation.eta_minutes} min`;
+                ri.textContent = text;
+              }
             }
           }
         }).catch(()=>{}).finally(()=>{

@@ -341,6 +341,30 @@ header nav a:hover { color: #FFB300 }
 .form-control::placeholder { color: #9b9b9b }
 .btn-outline-light { background: transparent; color: #FFB300; border: 2px solid #FFB300; }
 
+/* Burbuja de notificaciones (cono) */
+.notif-bubble {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-image: url('/static/img/cono.png');
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  cursor: pointer;
+  z-index: 2100;
+  transition: transform 360ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease;
+}
+.notif-bubble:active { transform: scale(0.96); }
+.notif-bubble.hidden { opacity: 0; pointer-events: none; }
+
+/* Clase aplicada durante la animación hacia el centro */
+.notif-bubble.animating {
+  transition: transform 420ms cubic-bezier(.2,.9,.2,1), left 420ms ease, top 420ms ease;
+}
+
 
 /* ---------- SOCIAL LOGIN ---------- */
 

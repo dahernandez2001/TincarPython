@@ -115,6 +115,22 @@
         </div>
         <div id="dp-reservation-info" class="text-muted small mb-2" style="text-align:center"></div>
       </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label small text-secondary">Duración (min)</label>
+            <select id="dp-duration" class="form-control" aria-label="Duración" >
+              <option value="10">10 min</option>
+              <option value="20">20 min</option>
+              <option value="30">30 min</option>
+              <option value="60">60 min</option>
+              <option value="120">120 min</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small text-secondary">Llegaré en (min)</label>
+            <input id="dp-eta" type="number" min="0" value="5" class="form-control" aria-label="ETA en minutos">
+          </div>
+        </div>
 
       <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
         <button type="button" id="dp-cancel" class="btn btn-outline-light">Cancelar</button>

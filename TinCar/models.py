@@ -215,9 +215,26 @@ def create_reservations_table():
             driver_id INTEGER NOT NULL,
             parking_id INTEGER NOT NULL,
             status TEXT DEFAULT 'pending',
+            duration_minutes INTEGER DEFAULT 10,
+            eta_minutes INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    conn.commit()
+
+    # Migration: si la tabla existía sin las columnas nuevas, intentar agregarlas
+    cursor.execute('PRAGMA table_info(reservations)')
+    existing = [r[1] for r in cursor.fetchall()]
+    if 'duration_minutes' not in existing:
+        try:
+            cursor.execute('ALTER TABLE reservations ADD COLUMN duration_minutes INTEGER DEFAULT 10')
+        except Exception:
+            pass
+    if 'eta_minutes' not in existing:
+        try:
+            cursor.execute('ALTER TABLE reservations ADD COLUMN eta_minutes INTEGER DEFAULT 0')
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -240,17 +257,41 @@ def create_reviews_table():
     conn.close()
 
 
-def add_reservation(driver_id, parking_id, status='pending'):
+def add_reservation(driver_id, parking_id, status='pending', duration_minutes=10, eta_minutes=0):
+    """Crea una reserva; duration_minutes y eta_minutes son opcionales.
+    Devuelve el registro creado."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO reservations (driver_id, parking_id, status) VALUES (?, ?, ?)', (driver_id, parking_id, status))
+    # Intentar insertar incluyendo las nuevas columnas (si existen)
+    try:
+        cursor.execute('INSERT INTO reservations (driver_id, parking_id, status, duration_minutes, eta_minutes) VALUES (?, ?, ?, ?, ?)', (driver_id, parking_id, status, duration_minutes, eta_minutes))
+    except Exception:
+        # Si la tabla no tiene las columnas nuevas, caer atrás a la inserción antigua
+        cursor.execute('INSERT INTO reservations (driver_id, parking_id, status) VALUES (?, ?, ?)', (driver_id, parking_id, status))
     conn.commit()
     last_id = cursor.lastrowid
-    cursor.execute('SELECT id, driver_id, parking_id, status, created_at FROM reservations WHERE id = ?', (last_id,))
-    r = cursor.fetchone()
+    # Intentar seleccionar las columnas nuevas si existen
+    try:
+        cursor.execute('SELECT id, driver_id, parking_id, status, duration_minutes, eta_minutes, created_at FROM reservations WHERE id = ?', (last_id,))
+        r = cursor.fetchone()
+    except Exception:
+        cursor.execute('SELECT id, driver_id, parking_id, status, created_at FROM reservations WHERE id = ?', (last_id,))
+        r = cursor.fetchone()
     conn.close()
     if not r:
         return None
+    # Normalizar salida: incluir duration_minutes y eta_minutes si existen
+    out = {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3]}
+    try:
+        # Si la consulta devolvió duration/eta
+        if len(r) >= 6:
+            out['duration_minutes'] = r[4]
+            out['eta_minutes'] = r[5]
+            out['created_at'] = r[6]
+        else:
+            out['created_at'] = r[4]
+    except Exception:
+        out['created_at'] = None
     # Marcar el parking como ocupado y guardar timestamp
     try:
         import datetime
@@ -261,7 +302,7 @@ def add_reservation(driver_id, parking_id, status='pending'):
             pass
     except Exception:
         pass
-    return {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3], 'created_at': r[4]}
+    return out
 
 
 def get_reservations_count_by_driver(driver_id):
@@ -277,12 +318,27 @@ def get_reservation_by_driver_and_parking(driver_id, parking_id):
     """Devuelve la reserva activa (o cualquier reserva) del conductor para un parking, o None."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, driver_id, parking_id, status, created_at FROM reservations WHERE driver_id = ? AND parking_id = ? ORDER BY created_at DESC LIMIT 1', (driver_id, parking_id))
-    r = cursor.fetchone()
+    # Intentar seleccionar también duration/eta si existen
+    try:
+        cursor.execute('SELECT id, driver_id, parking_id, status, duration_minutes, eta_minutes, created_at FROM reservations WHERE driver_id = ? AND parking_id = ? ORDER BY created_at DESC LIMIT 1', (driver_id, parking_id))
+        r = cursor.fetchone()
+    except Exception:
+        cursor.execute('SELECT id, driver_id, parking_id, status, created_at FROM reservations WHERE driver_id = ? AND parking_id = ? ORDER BY created_at DESC LIMIT 1', (driver_id, parking_id))
+        r = cursor.fetchone()
     conn.close()
     if not r:
         return None
-    return {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3], 'created_at': r[4]}
+    out = {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3]}
+    try:
+        if len(r) >= 6:
+            out['duration_minutes'] = r[4]
+            out['eta_minutes'] = r[5]
+            out['created_at'] = r[6]
+        else:
+            out['created_at'] = r[4]
+    except Exception:
+        out['created_at'] = None
+    return out
 
 
 def cancel_reservation(reservation_id):

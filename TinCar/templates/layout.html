@@ -38,6 +38,30 @@
   <!-- Contenido dinámico -->
   {% block content %}{% endblock %}
 
+  <!-- Burbuja de notificaciones (cono) -->
+  <div id="notifBubble" class="notif-bubble" role="button" aria-label="Notificaciones" title="Notificaciones"></div>
+
+  <!-- Modal que abre desde la burbuja de notificaciones -->
+  <div id="notifModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button id="closeNotifModal" class="modal-close">×</button>
+      <div class="modal-header text-center">
+        <span class="badge btn-orange">Notificaciones</span>
+      </div>
+      <div class="modal-body">
+        <div id="notifContent" class="text-light">
+          <p class="text-secondary">Aquí aparecerán tus notificaciones.</p>
+          <ul id="notifList" class="list-group list-group-flush">
+            <!-- Items serán añadidos por JS -->
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-end p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+        <button type="button" id="notifCloseBtn" class="btn btn-outline-light">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -50,6 +74,93 @@
           const bsAlert = new bootstrap.Alert(alert);
           bsAlert.close();
         }, 3000); // 3 segundos
+      });
+    });
+  </script>
+  <!-- Script de la burbuja de notificaciones -->
+  <script>
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const bubble = document.getElementById('notifBubble');
+      const modal = document.getElementById('notifModal');
+      const closeBtn = document.getElementById('closeNotifModal');
+      const notifCloseBtn = document.getElementById('notifCloseBtn');
+
+      if(!bubble) return;
+
+      // Si existe una imagen cono.png en la página, posicionar la burbuja relativamente a ella
+      const imgs = Array.from(document.querySelectorAll('img'));
+      const conoImg = imgs.find(i => i.src && i.src.endsWith('/static/img/cono.png'));
+      if(conoImg){
+        // colocar la burbuja cerca del img (position fixed usando el boundingClientRect)
+        const r = conoImg.getBoundingClientRect();
+        // calcular posición para que quede encima a la derecha
+        bubble.style.left = (r.left + r.width - 12) + 'px';
+        bubble.style.top = (r.top - 12) + 'px';
+        bubble.style.right = 'auto';
+        bubble.style.bottom = 'auto';
+      }
+
+      function openModal(){
+        if(!modal) return;
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden','false');
+      }
+      function closeModal(){
+        if(!modal) return;
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden','true');
+      }
+
+      // animar la burbuja hacia el centro y abrir modal
+      bubble.addEventListener('click', (e)=>{
+        // calcular centro de la ventana
+        const cw = window.innerWidth/2;
+        const ch = window.innerHeight/2;
+        const br = bubble.getBoundingClientRect();
+        const bx = br.left + br.width/2;
+        const by = br.top + br.height/2;
+        const dx = cw - bx;
+        const dy = ch - by;
+
+        // aplicar transform que lleve la burbuja al centro
+        bubble.classList.add('animating');
+        bubble.style.transform = `translate(${dx}px, ${dy}px) scale(1.4)`;
+        // después de la animación, abrir modal y ocultar burbuja
+        const onEnd = ()=>{
+          bubble.removeEventListener('transitionend', onEnd);
+          // mantener la burbuja visible pero desactivada mientras el modal esté abierto
+          bubble.classList.add('hidden');
+          openModal();
+        };
+        bubble.addEventListener('transitionend', onEnd);
+      });
+
+      // cerrar modal: reubicar burbuja (restaurar transform)
+      function restoreBubble(){
+        bubble.classList.remove('hidden');
+        bubble.style.transform = '';
+        // forzar reflow para permitir transición inversa
+        void bubble.offsetWidth;
+        bubble.classList.remove('animating');
+      }
+
+      closeBtn && closeBtn.addEventListener('click', ()=>{ closeModal(); restoreBubble(); });
+      notifCloseBtn && notifCloseBtn.addEventListener('click', ()=>{ closeModal(); restoreBubble(); });
+
+      // ejemplo: cargar notificaciones ficticias cuando se abre el modal
+      modal && modal.addEventListener('transitionend', ()=>{
+        if(modal.classList.contains('open')){
+          const list = document.getElementById('notifList');
+          if(list && list.children.length === 0){
+            // añadir 3 notificaciones de ejemplo
+            ['Tu reserva vence en 5 min','Nuevo comentario en tu parqueadero','Recordatorio: verifica tu disponibilidad'].forEach(text=>{
+              const li = document.createElement('li');
+              li.className = 'list-group-item bg-transparent text-light';
+              li.textContent = text;
+              list.appendChild(li);
+            });
+          }
+        }
       });
     });
   </script>
