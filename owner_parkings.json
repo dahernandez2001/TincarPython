@@ -1,0 +1,73 @@
+{
+  "parkings": [
+    {
+      "active": true,
+      "address": "Av Demo",
+      "city": "Bogota",
+      "department": "Cundinamarca",
+      "email": "owner@example.com",
+      "features": "Iluminado",
+      "housing_type": "Casa",
+      "id": 1,
+      "image_path": null,
+      "latitude": null,
+      "longitude": null,
+      "name": "Parqueadero X",
+      "occupied_since": null,
+      "phone": "3001234567",
+      "size": "3x4"
+    },
+    {
+      "active": true,
+      "address": "Av Demo",
+      "city": "Bogota",
+      "department": "Cundinamarca",
+      "email": "owner@example.com",
+      "features": "Iluminado",
+      "housing_type": "Casa",
+      "id": 2,
+      "image_path": null,
+      "latitude": null,
+      "longitude": null,
+      "name": "Parqueadero X",
+      "occupied_since": null,
+      "phone": "3001234567",
+      "size": "3x4"
+    },
+    {
+      "active": true,
+      "address": "Calle E2E 123",
+      "city": "Bogota",
+      "department": "Bogota",
+      "email": "owner@demo.test",
+      "features": null,
+      "housing_type": null,
+      "id": 9,
+      "image_path": null,
+      "latitude": 4.61,
+      "longitude": -74.08,
+      "name": "Test Parking E2E",
+      "occupied_since": null,
+      "phone": "3001234567",
+      "size": null
+    },
+    {
+      "active": true,
+      "address": "Calle E2E 123",
+      "city": "Bogota",
+      "department": "Bogota",
+      "email": "owner@demo.test",
+      "features": null,
+      "housing_type": null,
+      "id": 10,
+      "image_path": null,
+      "latitude": 4.61,
+      "longitude": -74.08,
+      "name": "Test Parking E2E",
+      "occupied_since": null,
+      "phone": "3001234567",
+      "size": null
+    }
+  ],
+  "success": true
+}

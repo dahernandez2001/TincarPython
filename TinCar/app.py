@@ -8,6 +8,7 @@ from models import get_connection, create_parkings_table, add_parking, get_parki
 from models import get_parking, update_parking, delete_parking
 from models import create_reservations_table, create_reviews_table, get_active_parkings, get_reservations_count_by_driver, get_rating_sum_for_driver
 from models import add_reservation
+from models import get_reservation_by_driver_and_parking, cancel_reservation
 from utils.geocode import geocode_location
 import requests
 
@@ -494,6 +495,18 @@ def api_driver_stats():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/owner/parkings', methods=['GET'])
+def api_owner_parkings():
+    if 'user_id' not in session:
+        return jsonify({'error': 'not authenticated'}), 401
+    try:
+        owner_id = session['user_id']
+        parkings = get_parkings_by_owner(owner_id)
+        return jsonify({'success': True, 'parkings': parkings})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/reservations', methods=['POST'])
 def create_reservation():
     if 'user_id' not in session:
@@ -508,6 +521,53 @@ def create_reservation():
         if not reservation:
             return jsonify({'error': 'could not create reservation'}), 500
         return jsonify({'success': True, 'reservation': reservation})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/reservations', methods=['GET'])
+def get_reservation():
+    """Consulta si el conductor actual tiene una reserva para un parqueadero dado.
+    Parámetro query: parking_id
+    """
+    if 'user_id' not in session:
+        return jsonify({'error': 'not authenticated'}), 401
+    parking_id = request.args.get('parking_id')
+    if not parking_id:
+        return jsonify({'error': 'missing parking_id'}), 400
+    try:
+        driver_id = session['user_id']
+        try:
+            pid = int(parking_id)
+        except Exception:
+            return jsonify({'error': 'invalid parking_id'}), 400
+        res = get_reservation_by_driver_and_parking(driver_id, pid)
+        if not res:
+            return jsonify({'success': True, 'exists': False})
+        return jsonify({'success': True, 'exists': True, 'reservation': res})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reservations/<int:reservation_id>/cancel', methods=['POST'])
+def api_cancel_reservation(reservation_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'not authenticated'}), 401
+    try:
+        # verificar que la reserva pertenezca al usuario
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT driver_id FROM reservations WHERE id = ?', (reservation_id,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'not found'}), 404
+        if row[0] != session['user_id']:
+            return jsonify({'error': 'forbidden'}), 403
+        ok = cancel_reservation(reservation_id)
+        if not ok:
+            return jsonify({'success': False, 'error': 'could not cancel reservation'}), 500
+        return jsonify({'success': True, 'id': reservation_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

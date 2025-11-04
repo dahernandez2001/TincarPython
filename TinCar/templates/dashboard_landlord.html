@@ -44,11 +44,11 @@
           </thead>
           <tbody>
             {% for p in parkings %}
-            <tr data-parking-id="{{ p.id }}">
+            <tr data-parking-id="{{ p.id }}" data-active="{{ 1 if p.active else 0 }}" data-occupied="{{ p.occupied_since or '' }}">
               <td class="fw-semibold parking-name" data-parking-id="{{ p.id }}">{{ p.name }}</td>
-              <td class="text-muted small">{{ p.status or 'Libre' }}</td>
+              <td class="text-muted small parking-status">{{ p.status or ( 'Libre' if p.active else 'Ocupado' ) }}</td>
               <td class="text-warning">$3.000 / 10min</td>
-              <td class="text-muted small"><span id="time-{{ p.id }}">00:00:00</span></td>
+              <td class="text-muted small parking-time"><span id="time-{{ p.id }}">{% if p.occupied_since %}00:00:00{% else %}00:00:00{% endif %}</span></td>
               <td class="text-end">
                 <div class="form-check form-switch d-inline-block">
                   <input class="form-check-input parking-toggle" type="checkbox" role="switch" data-parking-id="{{ p.id }}" id="switch{{ loop.index }}" {% if p.active %}checked{% endif %}>
@@ -200,6 +200,66 @@
 
 {% block scripts %}
 <script>
+// Timers para parqueaderos ocupados y refresco periódico
+function startParkingTimers(){
+  const rows = document.querySelectorAll('tr[data-parking-id]');
+  rows.forEach(row=>{
+    const pid = row.getAttribute('data-parking-id');
+    const active = row.getAttribute('data-active');
+    const occupied = row.getAttribute('data-occupied');
+    const timeSpan = document.getElementById('time-'+pid);
+    // clear existing interval stored on element
+    if(row._timer) { clearInterval(row._timer); row._timer = null; }
+    if(active === '0' && occupied){
+      // calcular desde occupied timestamp
+      let start = Date.parse(occupied);
+      if(isNaN(start)) start = Date.now();
+      function update(){
+        const diff = Date.now() - start;
+        const hrs = Math.floor(diff/3600000);
+        const mins = Math.floor((diff%3600000)/60000);
+        const secs = Math.floor((diff%60000)/1000);
+        const text = String(hrs).padStart(2,'0')+':'+String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+        if(timeSpan) timeSpan.textContent = text;
+      }
+      update();
+      row._timer = setInterval(update, 1000);
+      // update status text
+      const statusEl = row.querySelector('.parking-status');
+      if(statusEl) statusEl.textContent = 'Ocupado';
+    } else {
+      // ensure shows Libre and zeroed time
+      const statusEl = row.querySelector('.parking-status');
+      if(statusEl) statusEl.textContent = 'Libre';
+      if(timeSpan) timeSpan.textContent = '00:00:00';
+    }
+  });
+}
+
+// Polling para actualizar lista cada 8s (permite ver cambios tras reservas)
+function pollOwnerParkings(){
+  fetch('/api/owner/parkings')
+    .then(r=>r.json())
+    .then(data=>{
+      if(!data.success) return;
+      const parkings = data.parkings || [];
+      parkings.forEach(p=>{
+        const row = document.querySelector(`tr[data-parking-id="${p.id}"]`);
+        if(!row) return;
+        row.setAttribute('data-active', p.active? '1':'0');
+        row.setAttribute('data-occupied', p.occupied_since || '');
+      });
+      startParkingTimers();
+    }).catch(()=>{});
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  // iniciar timers en la carga
+  startParkingTimers();
+  // comenzar polling
+  setInterval(pollOwnerParkings, 8000);
+});
+
 // Modal open/close
 const openBtn = document.getElementById('openAddParking');
 const modal = document.getElementById('addParkingModal');

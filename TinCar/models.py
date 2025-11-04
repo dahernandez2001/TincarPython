@@ -68,6 +68,7 @@ def create_parkings_table():
             latitude REAL,
             longitude REAL,
             active INTEGER DEFAULT 1,
+            occupied_since TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -84,6 +85,11 @@ def create_parkings_table():
     if 'longitude' not in cols:
         try:
             cursor.execute('ALTER TABLE parkings ADD COLUMN longitude REAL')
+        except Exception:
+            pass
+    if 'occupied_since' not in cols:
+        try:
+            cursor.execute("ALTER TABLE parkings ADD COLUMN occupied_since TEXT")
         except Exception:
             pass
     conn.commit()
@@ -127,7 +133,7 @@ def add_parking(owner_id, name, phone=None, email=None, address=None, department
 def get_parkings_by_owner(owner_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active FROM parkings WHERE owner_id = ?', (owner_id,))
+    cursor.execute('SELECT id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active, occupied_since FROM parkings WHERE owner_id = ?', (owner_id,))
     rows = cursor.fetchall()
     conn.close()
     # Convert to list of dicts
@@ -135,7 +141,7 @@ def get_parkings_by_owner(owner_id):
     for r in rows:
         parkings.append({
             'id': r[0], 'name': r[1], 'phone': r[2], 'email': r[3], 'address': r[4], 'department': r[5], 'city': r[6],
-            'housing_type': r[7], 'size': r[8], 'features': r[9], 'image_path': r[10], 'latitude': r[11], 'longitude': r[12], 'active': bool(r[13])
+            'housing_type': r[7], 'size': r[8], 'features': r[9], 'image_path': r[10], 'latitude': r[11], 'longitude': r[12], 'active': bool(r[13]), 'occupied_since': r[14]
         })
     return parkings
 
@@ -143,14 +149,14 @@ def get_parkings_by_owner(owner_id):
 def get_parking(parking_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active, created_at FROM parkings WHERE id = ?', (parking_id,))
+    cursor.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active, occupied_since, created_at FROM parkings WHERE id = ?', (parking_id,))
     r = cursor.fetchone()
     conn.close()
     if not r:
         return None
     return {
         'id': r[0], 'owner_id': r[1], 'name': r[2], 'phone': r[3], 'email': r[4], 'address': r[5], 'department': r[6], 'city': r[7],
-        'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11], 'latitude': r[12], 'longitude': r[13], 'active': bool(r[14]), 'created_at': r[15]
+        'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11], 'latitude': r[12], 'longitude': r[13], 'active': bool(r[14]), 'occupied_since': r[15], 'created_at': r[16]
     }
 
 
@@ -158,7 +164,7 @@ def update_parking(parking_id, **fields):
     # fields: name, phone, email, address, department, city, housing_type, size, features, image_path, active
     allowed = ['name','phone','email','address','department','city','housing_type','size','features','image_path','active']
     # Allow updating coordinates
-    allowed += ['latitude','longitude']
+    allowed += ['latitude','longitude','occupied_since']
     keys = [k for k in fields.keys() if k in allowed]
     if not keys:
         return False
@@ -245,6 +251,16 @@ def add_reservation(driver_id, parking_id, status='pending'):
     conn.close()
     if not r:
         return None
+    # Marcar el parking como ocupado y guardar timestamp
+    try:
+        import datetime
+        occupied_ts = datetime.datetime.utcnow().isoformat()
+        try:
+            update_parking(parking_id, active=0, occupied_since=occupied_ts)
+        except Exception:
+            pass
+    except Exception:
+        pass
     return {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3], 'created_at': r[4]}
 
 
@@ -255,6 +271,43 @@ def get_reservations_count_by_driver(driver_id):
     row = cursor.fetchone()
     conn.close()
     return int(row[0]) if row else 0
+
+
+def get_reservation_by_driver_and_parking(driver_id, parking_id):
+    """Devuelve la reserva activa (o cualquier reserva) del conductor para un parking, o None."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, driver_id, parking_id, status, created_at FROM reservations WHERE driver_id = ? AND parking_id = ? ORDER BY created_at DESC LIMIT 1', (driver_id, parking_id))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {'id': r[0], 'driver_id': r[1], 'parking_id': r[2], 'status': r[3], 'created_at': r[4]}
+
+
+def cancel_reservation(reservation_id):
+    """Marca la reserva como 'cancelled'. Devuelve True si se actualizó alguna fila."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # obtener parking_id asociado
+        cursor.execute('SELECT parking_id FROM reservations WHERE id = ?', (reservation_id,))
+        row = cursor.fetchone()
+        parking_id = row[0] if row else None
+        cursor.execute("UPDATE reservations SET status = 'cancelled' WHERE id = ?", (reservation_id,))
+        conn.commit()
+        changed = cursor.rowcount
+    except Exception:
+        conn.rollback()
+        changed = 0
+    conn.close()
+    # Si se canceló, liberar el parking (si existe)
+    if changed and parking_id:
+        try:
+            update_parking(parking_id, active=1, occupied_since=None)
+        except Exception:
+            pass
+    return changed > 0
 
 
 def add_review(reviewer_id, driver_id, parking_id, rating, comment=None):

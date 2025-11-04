@@ -274,6 +274,34 @@ header nav a:hover { color: #FFB300 }
 .parking-name { cursor: pointer; }
 .parking-name:hover { text-decoration: underline; }
 
+/* 1) Hacer que el texto del modal conductor y algunos campos use el mismo tono que "Modo conductor" (#FFB300) */
+.modal-card .badge.btn-orange { background-color: #FFB300; color: #1A1919; }
+/* limitar color amarillo solo al modal conductor para no afectar al arrendador */
+#driverParkingModal .modal-card .form-control[disabled], #driverParkingModal .modal-card .form-control { color: #FFB300; }
+.parking-status, .parking-time { color: #FFB300; font-weight: 600; }
+
+/* Aumentar especificidad y forzar visibilidad en la tabla de arrendador
+   Algunos temas/utility classes (como .text-muted) pueden bajar contraste
+   o aplicar estilos que hagan que el texto no se vea; estas reglas garantizan
+   que Estado / Tiempo sean claramente legibles sobre el fondo oscuro. */
+.parkings-table tbody td.parking-status,
+.parkings-table tbody td.parking-time,
+.parkings-table tbody td .parking-status,
+.parkings-table tbody td .parking-time,
+.parkings-table tbody td .parking-time span {
+  color: #FFB300 !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+  font-size: 0.95rem !important;
+}
+
+/* Si el estilo .text-muted aplica un color con mucha transparencia,
+   esta regla lo anula y evita que el texto quede visualmente oculto. */
+.parkings-table tbody td.text-muted.small.parking-status {
+  color: #FFB300 !important;
+  opacity: 1 !important;
+}
+
 /* custom scrollbar for the inner table */
 .table-responsive::-webkit-scrollbar { height: 8px; width:10px }
 .table-responsive::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px }
@@ -311,7 +339,7 @@ header nav a:hover { color: #FFB300 }
 .upload-placeholder { width:140px; height:120px; background: rgba(255,255,255,0.03); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#aaa }
 .form-control { background-color: rgba(255,255,255,0.03); border: none; color: #eee }
 .form-control::placeholder { color: #9b9b9b }
-.btn-outline-light { background: transparent; color: #1A1919; border: 2px solid #000; }
+.btn-outline-light { background: transparent; color: #FFB300; border: 2px solid #FFB300; }
 
 
 /* ---------- SOCIAL LOGIN ---------- */

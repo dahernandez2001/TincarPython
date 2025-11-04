@@ -38,18 +38,23 @@ document.addEventListener("DOMContentLoaded", () => {
       const parkings = data.parkings || [];
       // limpiar markers existentes
       markersGroup.clearLayers();
+      const seen = new Set();
       parkings.forEach(p => {
         const lat = p.latitude !== null && p.latitude !== undefined ? parseFloat(p.latitude) : null;
         const lng = p.longitude !== null && p.longitude !== undefined ? parseFloat(p.longitude) : null;
-        if(!isNaN(lat) && !isNaN(lng)){
-          // usar circleMarker (más ligero) y color según disponibilidad
-          const isAvailable = true; // endpoint ya filtra por active
-          const marker = L.circleMarker([lat,lng], { radius: 6, color: isAvailable ? '#2b8a3e' : '#b30000', fillOpacity: 0.9 });
-          const fullAddress = `${p.address || ''}${p.city ? ', ' + p.city : ''}${p.department ? ', ' + p.department : ''}`;
-          const popupHtml = `<strong>${p.name || 'Parqueadero'}</strong><br>${fullAddress || ''}<br><button class="btn-reserve" onclick="reserveParking(${p.id})">Reservar</button>`;
-          marker.bindPopup(popupHtml);
-          markersGroup.addLayer(marker);
-        }
+          if(!isNaN(lat) && !isNaN(lng)){
+            const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+            if(seen.has(key)) return; // evitar duplicados en la misma coordenada
+            seen.add(key);
+            // usar circleMarker (más ligero) y color según disponibilidad
+            const isAvailable = true; // endpoint ya filtra por active
+            const marker = L.circleMarker([lat,lng], { radius: 6, color: isAvailable ? '#2b8a3e' : '#b30000', fillOpacity: 0.9 });
+            // En lugar de un popup pequeño, abrimos un modal más rico (similar al del arrendador)
+            marker.on('click', ()=>{
+              openDriverModalWithParking(p);
+            });
+            markersGroup.addLayer(marker);
+          }
       });
     }catch(err){
       console.error('Error loading parkings for bounds:', err);
@@ -79,35 +84,10 @@ document.addEventListener("DOMContentLoaded", () => {
     .catch(err => console.error('Fetch driver stats failed', err));
 
   function refreshActiveParkings() {
-    fetch('/api/parkings/active')
-      .then(r => {
-        if (!r.ok) {
-          throw new Error(`HTTP error! status: ${r.status}`);
-        }
-        return r.json();
-      })
-      .then(data => {
-        if (data.success) {
-          map.eachLayer(layer => {
-            if (layer instanceof L.Marker) {
-              map.removeLayer(layer);
-            }
-          });
-          const parkings = data.parkings || [];
-            parkings.forEach(p => {
-              const lat = p.latitude !== null && p.latitude !== undefined ? parseFloat(p.latitude) : null;
-              const lng = p.longitude !== null && p.longitude !== undefined ? parseFloat(p.longitude) : null;
-              if (!isNaN(lat) && !isNaN(lng)) {
-                const marker = L.marker([lat, lng]).addTo(map);
-                const popupHtml = `<strong>${p.name || 'Parqueadero'}</strong><br>${p.address || ''}<br><button class="btn-reserve" onclick="reserveParking(${p.id})">Reservar</button>`;
-                marker.bindPopup(popupHtml);
-              }
-            });
-        } else {
-          console.error('Error cargando garajes activos:', data.error);
-        }
-      })
-      .catch(err => console.error('Error al refrescar garajes activos:', err));
+    // Reuse the bounds-loading implementation to avoid duplicate markers
+    try{
+      loadParkingsForBounds();
+    }catch(err){ console.error('Error al refrescar garajes activos:', err); }
   }
 
   function activateParking(parkingId) {
@@ -132,9 +112,7 @@ document.addEventListener("DOMContentLoaded", () => {
       .catch(err => console.error('Error en la activación del parqueadero:', err));
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    refreshActiveParkings();
-  });
+  // no separate DOMContentLoaded listener here; initial load already performed
 });
     // Exponer función global para que los popups puedan llamar a la reserva
     window.reserveParking = function(parkingId){
@@ -166,3 +144,121 @@ document.addEventListener("DOMContentLoaded", () => {
       })
       .catch(err => alert('Error al crear reserva: '+err.message));
     };
+
+  // ===== Modal conductor =====
+  const driverModal = document.getElementById('driverParkingModal');
+  const driverClose = document.getElementById('closeDriverModal');
+  const driverCancel = document.getElementById('dp-cancel');
+  const driverReserveBtn = document.getElementById('dp-reserve');
+
+  function openDriverModal(){
+    if(!driverModal) return;
+    driverModal.classList.add('open');
+    driverModal.setAttribute('aria-hidden','false');
+  }
+  function closeDriverModal(){
+    if(!driverModal) return;
+    driverModal.classList.remove('open');
+    driverModal.setAttribute('aria-hidden','true');
+  }
+
+  driverClose && driverClose.addEventListener('click', closeDriverModal);
+  driverCancel && driverCancel.addEventListener('click', closeDriverModal);
+
+  // Rellenar modal con los datos del parqueadero
+  function openDriverModalWithParking(p){
+    try{
+  // populate inputs (use .value since they are inputs now)
+  document.getElementById('dp-id').value = p.id;
+  const setIf = (id, value) => { const el = document.getElementById(id); if(!el) return; el.value = value || ''; };
+  setIf('dp-name', p.name || '');
+  setIf('dp-phone', p.phone || '');
+  setIf('dp-email', p.email || '');
+  setIf('dp-address', p.address || '');
+  setIf('dp-department', p.department || '');
+  setIf('dp-city', p.city || '');
+  setIf('dp-latitude', p.latitude !== null && p.latitude !== undefined ? p.latitude : '');
+  setIf('dp-longitude', p.longitude !== null && p.longitude !== undefined ? p.longitude : '');
+  setIf('dp-housing_type', p.housing_type || '');
+  setIf('dp-size', p.size || '');
+  setIf('dp-features', p.features || '');
+  const imgContainer = document.getElementById('dp-image');
+      if(imgContainer){
+        if(p.image_path){
+          imgContainer.innerHTML = `<img src="${p.image_path}" alt="img" style="max-width:220px; max-height:160px; border-radius:6px;">`;
+        } else {
+          imgContainer.innerHTML = `<div style="font-size:64px; opacity:0.2;">🏠</div>`;
+        }
+      }
+      // Comprobar si el conductor ya tiene una reserva para este parqueadero
+      // y ajustar el botón a "Cancelar reserva" si aplica.
+  const reserveBtn = document.getElementById('dp-reserve');
+      const prevFocus = document.activeElement;
+
+      function setReserveActionToCreate(){
+        if(!reserveBtn) return;
+        reserveBtn.textContent = 'Reservar';
+        reserveBtn.onclick = function(){
+          window.reserveParking(p.id);
+          closeDriverModal();
+        };
+      }
+
+      function cancelReservationById(resId){
+        if(!resId) return;
+        if(!confirm('¿Deseas cancelar la reserva?')) return;
+        fetch(`/api/reservations/${resId}/cancel`, { method: 'POST' })
+          .then(r => r.json().then(j=>({ok: r.ok, json: j})))
+          .then(({ok, json}) => {
+            if(ok && json.success){
+              alert('Reserva cancelada.');
+              // refrescar stats
+              fetch('/api/driver/stats').then(r=>r.json()).then(d=>{ if(d.success){ const countEl = document.getElementById('reservations-count'); if(countEl) countEl.textContent = d.reservations_count || 0; } }).catch(()=>{});
+              // limpiar info de reserva en modal
+              const ri = document.getElementById('dp-reservation-info'); if(ri) ri.textContent = '';
+            } else {
+              alert('No se pudo cancelar la reserva: ' + (json.error||'error'));
+            }
+          })
+          .catch(err=> alert('Error cancelando reserva: '+err.message));
+      }
+
+      // Por defecto, asignar acción de crear reserva
+      setReserveActionToCreate();
+      // Consultar si hay reserva existente
+      fetch('/api/reservations?parking_id='+encodeURIComponent(p.id))
+        .then(r => r.json())
+        .then(data => {
+          if(data && data.success && data.exists && data.reservation){
+            // Si existe y no está cancelada, mostrar opción de cancelar
+            if(data.reservation.status !== 'cancelled'){
+              reserveBtn.textContent = 'Cancelar reserva';
+              reserveBtn.onclick = function(){
+                cancelReservationById(data.reservation.id);
+                closeDriverModal();
+              };
+              // mostrar info de reserva en el placeholder
+              const ri = document.getElementById('dp-reservation-info');
+              if(ri) ri.textContent = `Reserva existente (ID: ${data.reservation.id}) - estado: ${data.reservation.status}`;
+            }
+          }
+        }).catch(()=>{}).finally(()=>{
+          // accesibilidad: focus al botón y almacenar foco previo
+          try{ if(reserveBtn){ reserveBtn.focus(); } }catch(e){}
+        });
+
+      // cerrar con Escape y restablecer foco
+      function onKeyDown(e){ if(e.key === 'Escape'){ closeDriverModal(); } }
+      document.addEventListener('keydown', onKeyDown);
+      // cuando se cierre el modal, quitar listener y restaurar foco
+      const restore = function(){
+        document.removeEventListener('keydown', onKeyDown);
+        try{ if(prevFocus && prevFocus.focus) prevFocus.focus(); }catch(e){}
+        // quitar este handler para evitar fugas
+        driverModal.removeEventListener('transitionend', restore);
+      };
+      driverModal.addEventListener('transitionend', restore);
+
+      openDriverModal();
+    }catch(err){ console.error('openDriverModalWithParking error', err); }
+  }

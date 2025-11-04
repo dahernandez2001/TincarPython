@@ -67,6 +67,62 @@
     </a>
   </div>
 </main>
+
+<!-- Modal para detalle de parqueadero (Conductor) - organizado como Agregar parqueadero -->
+<div id="driverParkingModal" class="modal-overlay" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <button id="closeDriverModal" class="modal-close">×</button>
+    <div class="modal-header text-center">
+      <span class="badge btn-orange">Detalle del parqueadero</span>
+    </div>
+    <form id="driverParkingForm">
+      <div class="modal-body">
+        <input type="hidden" id="dp-id">
+
+        <div class="row g-2 mb-3">
+          <div class="col-4"><input id="dp-name" class="form-control" placeholder="Nombre Garaje" disabled></div>
+          <div class="col-4"><input id="dp-phone" class="form-control" placeholder="Teléfono" disabled></div>
+          <div class="col-4"><input id="dp-email" class="form-control" placeholder="Correo electrónico" disabled></div>
+        </div>
+
+        <hr class="my-3"/>
+
+        <div class="row g-2 mb-3">
+          <div class="col-4"><input id="dp-address" class="form-control" placeholder="Dirección" disabled></div>
+          <div class="col-4"><input id="dp-department" class="form-control" placeholder="Departamento" disabled></div>
+          <div class="col-4"><input id="dp-city" class="form-control" placeholder="Ciudad / Municipio" disabled></div>
+        </div>
+
+        <hr class="my-3"/>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6"><input id="dp-latitude" class="form-control" placeholder="Latitud" disabled></div>
+          <div class="col-6"><input id="dp-longitude" class="form-control" placeholder="Longitud" disabled></div>
+        </div>
+
+        <hr class="my-3"/>
+
+        <div class="row g-2 mb-3">
+          <div class="col-4"><input id="dp-housing_type" class="form-control" placeholder="Tipo de vivienda" disabled></div>
+          <div class="col-4"><input id="dp-size" class="form-control" placeholder="Medidas" disabled></div>
+          <div class="col-4"><input id="dp-features" class="form-control" placeholder="Características" disabled></div>
+        </div>
+
+        <div class="d-flex justify-content-center my-3">
+          <div id="dp-image" class="upload-placeholder text-center" style="width:160px; height:120px;">
+            <div style="font-size:48px; opacity:0.2;">🏠</div>
+          </div>
+        </div>
+        <div id="dp-reservation-info" class="text-muted small mb-2" style="text-align:center"></div>
+      </div>
+
+      <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+        <button type="button" id="dp-cancel" class="btn btn-outline-light">Cancelar</button>
+        <button type="button" id="dp-reserve" class="btn btn-orange">Reservar</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
