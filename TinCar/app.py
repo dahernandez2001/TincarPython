@@ -554,8 +554,25 @@ def api_create_reservation():
         # Verificar si ya existe una reserva activa para este parqueadero
         existing = get_reservation_by_driver_and_parking(session['user_id'], parking_id)
         if existing and existing.get('status') not in ['cancelled', 'completed']:
-            return jsonify({'success': False, 'error': 'Ya tienes una reserva activa para este parqueadero'}), 400
-            
+            # Forzar notificación si no existe
+            from models import add_notification, get_notifications_by_user
+            notifications = get_notifications_by_user(session['user_id'])
+            notif_exists = any(n['type'] == 'active_reservation' and n['reservation_id'] == existing['id'] for n in notifications)
+            if not notif_exists:
+                # Obtener nombre del garaje
+                from models import get_parking
+                parking = get_parking(parking_id)
+                parking_name = parking['name'] if parking and 'name' in parking else 'el garaje'
+                add_notification(
+                    user_id=session['user_id'],
+                    message=f'Tienes una reserva activa en {parking_name}.',
+                    type='active_reservation',
+                    reservation_id=existing['id'],
+                    owner_id=parking['owner_id'] if parking and 'owner_id' in parking else None,
+                    eta=existing.get('eta_minutes', 0),
+                    extra_data=f'{{"parking_name": "{parking_name}", "duration": {existing.get("duration_minutes", 10)}}}'
+                )
+            return jsonify({'success': False, 'error': 'Ya tienes una reserva activa para este parqueadero', 'reservation': existing}), 400
         # Crear la reserva
         reservation = add_reservation(
             driver_id=session['user_id'],
@@ -563,15 +580,12 @@ def api_create_reservation():
             duration_minutes=duration_minutes,
             eta_minutes=eta_minutes
         )
-        
         if not reservation:
             return jsonify({'success': False, 'error': 'No se pudo crear la reserva'}), 500
-            
         return jsonify({
             'success': True,
             'reservation': reservation
         })
-        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

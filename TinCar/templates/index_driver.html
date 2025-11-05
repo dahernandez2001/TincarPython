@@ -26,11 +26,11 @@
   </div>
 
   <!-- Modal de Notificaciones -->
-  <div id="notificationsModal" class="modal-overlay" aria-hidden="true">
+  <div id="notificationsModal" class="modal-overlay" aria-hidden="true" style="z-index:9999;">
     <div class="modal-card" role="dialog" aria-modal="true" style="max-width: 500px;">
-      <button class="modal-close" onclick="closeNotificationsModal()">×</button>
-      <div class="modal-header">
-        <h5 class="mb-0">Notificaciones</h5>
+      <button class="modal-close" id="closeModalBtn">×</button>
+      <div class="modal-header text-center">
+        <span class="badge btn-orange">Notificaciones</span>
       </div>
       <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
         <div id="notificationsList">
@@ -181,50 +181,61 @@
     }
 
     function formatNotification(notification) {
-        let actionsHtml = '';
-        if (notification.type === 'active_reservation') {
-            actionsHtml = `
-                <div class="notification-actions">
-                    <button class="btn-arrived" onclick="markAsArrived(${notification.reservation_id})">Ya llegué</button>
-                    <button class="btn-contact" onclick="contactOwner(${notification.owner_id})">Contactar</button>
-                    <button class="btn-cancel" onclick="cancelReservation(${notification.reservation_id})">Cancelar</button>
-                </div>
-            `;
-        } else if (notification.type === 'arrived_confirmation') {
-            actionsHtml = `
-                <div class="notification-actions">
-                    <button class="btn-finish" onclick="finishReservation(${notification.reservation_id})">Finalizar reserva</button>
-                    <button class="btn-contact" onclick="contactOwner(${notification.owner_id})">Contactar</button>
-                </div>
-            `;
-        }
-        
-        return `
-            <div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">
-                <div class="notification-content">
-                    ${notification.message}
-                    ${notification.eta ? `<div class="text-warning mt-2">Tiempo de llegada: ${notification.eta} minutos</div>` : ''}
-                </div>
-                ${actionsHtml}
-            </div>
-        `;
+    let extra = {};
+    try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
+    let html = '';
+    if (notification.type === 'active_reservation') {
+      html += `<p>Reservaste un garaje, recuerda llegar antes de <strong>${notification.eta || ''} minutos</strong>.</p>`;
+      html += `<hr><button class=\"btn btn-orange\" onclick=\"showGarageInfo(${notification.parking_id || 0})\">Garaje</button><button class=\"btn btn-outline-light\" onclick=\"cancelReservation(${notification.reservation_id})\">Cancelar reserva</button>`;
+    } else if (notification.type === 'arrived_confirmation') {
+      html += `<p>No llegaste al garaje en el tiempo estimulado.</p>`;
+      html += `<hr><button class=\"btn btn-orange\" onclick=\"showGarageInfo(${notification.parking_id || 0})\">Garaje</button><button class=\"btn btn-outline-light\" onclick=\"cancelReservation(${notification.reservation_id})\">Cancelar reserva</button>`;
+    } else {
+      html += `<p>${notification.message}</p>`;
+    }
+    return `<div class=\"notification-item ${notification.status === 'unread' ? 'unread' : ''}\" data-id=\"${notification.id}\">${html}</div>`;
     }
 
-    function loadNotifications() {
-        fetch('/api/notifications')
+  function loadNotifications() {
+      // Primero cargar reservas activas
+      fetch('/api/reservations/active/driver')
+        .then(response => response.json())
+        .then(data => {
+          let activeHtml = '';
+          if (data.success && data.reservations && data.reservations.length > 0) {
+            activeHtml = data.reservations.map(r => `
+              <div class="notification-item active-reservation">
+                <p>Reserva activa del garaje <strong>${r.parking_name}</strong>.</p>
+                <hr>
+                <button class="btn btn-orange" onclick="finishReservation(${r.id})">Finalizar</button>
+                <button class="btn btn-outline-light" disabled>Detalles</button>
+              </div>
+            `).join('');
+          }
+          // Luego cargar notificaciones normales
+          fetch('/api/notifications')
             .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    notifications = data.notifications;
-                    updateNotificationCount();
-                    const notificationsList = document.getElementById('notificationsList');
-                    if (notificationsList) {
-                        notificationsList.innerHTML = notifications.map(formatNotification).join('');
-                    }
+            .then(data2 => {
+              if (data2.success) {
+                notifications = data2.notifications;
+                updateNotificationCount();
+                const notificationsList = document.getElementById('notificationsList');
+                if (notificationsList) {
+                  let notifHtml = '';
+                  if (notifications.length === 0 && !activeHtml) {
+                    notifHtml = '<div class="text-center py-4" style="color:#939393;">Buzón vacío</div>';
+                  } else {
+                    notifHtml = notifications.map(formatNotification).join('');
+                  }
+                  notificationsList.innerHTML = activeHtml + notifHtml;
                 }
+              }
             })
             .catch(error => console.error('Error cargando notificaciones:', error));
-    }
+        })
+        .catch(error => console.error('Error cargando reservas activas:', error));
+  }
+  window.loadNotifications = loadNotifications;
 
     // Funciones de acción para las notificaciones
     function markAsArrived(reservationId) {
@@ -242,27 +253,38 @@
         .catch(error => console.error('Error:', error));
     }
 
-    function contactOwner(ownerId) {
-        // Implementar la lógica de contacto con el dueño
-        alert('Función de contacto en desarrollo');
-    }
-
-    function cancelReservation(reservationId) {
-        if (confirm('¿Estás seguro de que deseas cancelar la reserva?')) {
-            fetch(`/api/reservations/${reservationId}/cancel`, {
-                method: 'POST'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    loadNotifications();
-                } else {
-                    alert('Error al cancelar la reserva: ' + data.error);
-                }
-            })
-            .catch(error => console.error('Error:', error));
+  function showGarageInfo(parkingId) {
+    // Mostrar información del garaje en un modal o alerta
+    fetch(`/api/parkings/${parkingId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.id || (data.success && data.parking)) {
+          const p = data.parking || data;
+          alert(`Garaje: ${p.name}\nDirección: ${p.address}\nTeléfono: ${p.phone}`);
+        } else {
+          alert('No se pudo obtener la información del garaje');
         }
+      })
+      .catch(() => alert('Error de red al consultar el garaje'));
+  }
+
+  function cancelReservation(reservationId) {
+    if (confirm('¿Estás seguro de que deseas cancelar la reserva?')) {
+      fetch(`/api/reservations/${reservationId}/cancel`, {
+        method: 'POST'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          alert('Reserva cancelada correctamente');
+          loadNotifications();
+        } else {
+          alert('Error al cancelar la reserva: ' + data.error);
+        }
+      })
+      .catch(() => alert('Error de red al cancelar la reserva'));
     }
+  }
 
     function finishReservation(reservationId) {
         if (confirm('¿Estás seguro de que deseas finalizar la reserva?')) {
@@ -303,15 +325,17 @@
         }
     }
 
-    // Event listeners
-    document.addEventListener('DOMContentLoaded', () => {
-        loadNotifications();
-        setInterval(loadNotifications, 10000);
-
-        const notificationIcon = document.getElementById('notificationIcon');
-        if (notificationIcon) {
-            notificationIcon.addEventListener('click', openNotificationsModal);
-        }
-    });
+  document.addEventListener('DOMContentLoaded', () => {
+    loadNotifications();
+    setInterval(loadNotifications, 10000);
+    const notificationIcon = document.getElementById('notificationIcon');
+    if (notificationIcon) {
+      notificationIcon.addEventListener('click', openNotificationsModal);
+    }
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    if (closeModalBtn) {
+      closeModalBtn.addEventListener('click', closeNotificationsModal);
+    }
+  });
   </script>
 {% endblock %}

@@ -143,7 +143,13 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }).catch(()=>{});
         } else {
-          alert('No se pudo crear la reserva: ' + (json.error || 'error'));
+          if(json.reservation && json.reservation.id){
+            alert('Ya tienes una reserva activa para este parqueadero. Se mostrará en tus notificaciones.');
+            // Forzar recarga de notificaciones para mostrar la reserva activa
+            if(window.loadNotifications){ window.loadNotifications(); }
+          } else {
+            alert('No se pudo crear la reserva: ' + (json.error || 'error'));
+          }
         }
       })
       .catch(err => alert('Error al crear reserva: '+err.message));
