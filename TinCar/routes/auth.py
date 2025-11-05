@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
-from models import get_connection
+from models import get_connection, add_notification
 from utils.security import hash_password, check_password
 
 auth = Blueprint('auth', __name__)
@@ -76,3 +76,20 @@ def login():
             flash('❌ Credenciales incorrectas.', 'warning')
             return redirect(url_for('auth.login'))
     return render_template('login.html')
+
+# Ejemplo de lógica para generar notificaciones al iniciar sesión
+@auth.route('/generate_notifications', methods=['POST'])
+def generate_notifications():
+    user_id = session.get('user_id')
+    if not user_id:
+        flash('⚠️ Debes iniciar sesión para generar notificaciones.', 'warning')
+        return redirect(url_for('auth.login'))
+
+    # Notificación de ejemplo: reserva de garaje
+    add_notification(user_id, "Tu garaje ha sido reservado. El conductor llegará en el tiempo estipulado.", "reservation")
+
+    # Notificación de ejemplo: tiempo excedido
+    add_notification(user_id, "El tiempo estipulado ha pasado y el conductor no ha llegado. Puedes esperar o cancelar el servicio.", "timeout")
+
+    flash('✅ Notificaciones generadas.', 'success')
+    return redirect(url_for('dashboard'))

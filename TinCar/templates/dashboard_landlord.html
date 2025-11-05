@@ -191,6 +191,27 @@
     </div>
   </div>
 
+  <!-- Notificaciones en el icono del cono -->
+  <div id="notificationIcon" class="position-fixed" style="top: 20px; right: 20px; cursor: pointer;">
+    <img src="{{ url_for('static', filename='img/cono.png') }}" alt="Notificaciones" style="width: 40px; height: 40px;">
+    <span id="notificationCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
+  </div>
+
+  <!-- Modal de Notificaciones -->
+  <div id="notificationsModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" style="max-width: 500px;">
+      <button class="modal-close" onclick="closeNotificationsModal()">×</button>
+      <div class="modal-header">
+        <h5 class="mb-0">Notificaciones</h5>
+      </div>
+      <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+        <div id="notificationsList">
+          <!-- Las notificaciones se cargarán aquí dinámicamente -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="mt-4">
     <a href="{{ url_for('logout') }}" class="btn btn-outline-light">Cerrar sesión</a>
   </div>
@@ -199,6 +220,137 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+// Funciones para el manejo de notificaciones
+let notifications = [];
+
+function updateNotificationCount() {
+    const unreadCount = notifications.filter(n => n.status === 'unread').length;
+    const countBadge = document.getElementById('notificationCount');
+    if (countBadge) {
+        countBadge.textContent = unreadCount;
+        countBadge.style.display = unreadCount > 0 ? 'block' : 'none';
+    }
+}
+
+function loadNotifications() {
+    fetch('/api/notifications')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                notifications = data.notifications;
+                updateNotificationCount();
+                const notificationsList = document.getElementById('notificationsList');
+                if (notificationsList) {
+                    notificationsList.innerHTML = notifications.map(notification => {
+                        let actionsHtml = '';
+                        if (notification.type === 'driver_arrived') {
+                            actionsHtml = `
+                                <div class="d-flex gap-2 mt-2">
+                                    <button class="btn btn-sm btn-success" onclick="finishReservation(${notification.reservation_id})">Finalizar reserva</button>
+                                    <button class="btn btn-sm btn-primary" onclick="contactDriver(${JSON.parse(notification.extra_data || '{}').driver_id})">Contactar</button>
+                                </div>
+                            `;
+                        } else if (notification.type === 'new_reservation') {
+                            actionsHtml = `
+                                <div class="d-flex gap-2 mt-2">
+                                    <button class="btn btn-sm btn-primary" onclick="contactDriver(${JSON.parse(notification.extra_data || '{}').driver_id})">Contactar</button>
+                                    <button class="btn btn-sm btn-danger" onclick="cancelReservation(${notification.reservation_id})">Cancelar</button>
+                                </div>
+                            `;
+                        }
+                        
+                        return `
+                            <div class="notification-item p-3 mb-2 ${notification.status === 'unread' ? 'bg-dark' : ''}" style="border-radius: 8px;">
+                                <p class="mb-1">${notification.message}</p>
+                                <small class="text-muted">${new Date(notification.created_at).toLocaleString()}</small>
+                                ${actionsHtml}
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+        })
+        .catch(error => console.error('Error cargando notificaciones:', error));
+}
+
+// Funciones para el modal de notificaciones
+function openNotificationsModal() {
+    const modal = document.getElementById('notificationsModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        loadNotifications();
+        // Marcar todas las notificaciones como leídas
+        fetch('/api/notifications/mark-read', { method: 'POST' })
+            .then(() => loadNotifications())
+            .catch(error => console.error('Error marcando notificaciones como leídas:', error));
+    }
+}
+
+function closeNotificationsModal() {
+    const modal = document.getElementById('notificationsModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function finishReservation(reservationId) {
+    if (confirm('¿Estás seguro de que deseas finalizar la reserva?')) {
+        fetch(`/api/reservations/${reservationId}/finish`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadNotifications();
+            } else {
+                alert('Error al finalizar la reserva: ' + data.error);
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    }
+}
+
+function contactDriver(driverId) {
+    // Implementar la lógica de contacto con el conductor
+    alert('Función de contacto en desarrollo');
+}
+
+function cancelReservation(reservationId) {
+    if (confirm('¿Estás seguro de que deseas cancelar la reserva?')) {
+        fetch(`/api/reservations/${reservationId}/cancel`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadNotifications();
+            } else {
+                alert('Error al cancelar la reserva: ' + data.error);
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    }
+}
+
+// Event listeners para notificaciones
+document.addEventListener('DOMContentLoaded', () => {
+    // Cargar notificaciones inicialmente
+    loadNotifications();
+    
+    // Configurar polling para notificaciones (cada 10 segundos)
+    setInterval(loadNotifications, 10000);
+    
+    // Event listener para el icono de notificaciones
+    const notificationIcon = document.getElementById('notificationIcon');
+    if (notificationIcon) {
+        notificationIcon.addEventListener('click', openNotificationsModal);
+    }
+});
+</script>
+
 <script>
 // Timers para parqueaderos ocupados y refresco periódico
 function startParkingTimers(){
@@ -468,7 +620,7 @@ deleteBtn && deleteBtn.addEventListener('click', async ()=>{
   if(!confirm('¿Eliminar este parqueadero? Esta acción no se puede deshacer.')) return;
   const pid = document.getElementById('vp-id').value;
   try{
-    const res = await fetch(`/parkings/${pid}/delete`, { method: 'POST' });
+  const res = await fetch(`/api/parkings/${pid}/delete`, { method: 'POST' });
     const j = await res.json();
     if(!res.ok) throw new Error(j.error||'error');
     // remove row

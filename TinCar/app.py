@@ -3,12 +3,14 @@ import sqlite3
 from time import time
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask_socketio import SocketIO
 from routes.auth import auth
-from models import get_connection, create_parkings_table, add_parking, get_parkings_by_owner
+from models import get_connection
+from models import create_parkings_table, add_parking, get_parkings_by_owner
 from models import get_parking, update_parking, delete_parking
 from models import create_reservations_table, create_reviews_table, get_active_parkings, get_reservations_count_by_driver, get_rating_sum_for_driver
-from models import add_reservation
-from models import get_reservation_by_driver_and_parking, cancel_reservation
+from models import add_reservation, add_notification, get_notifications_by_user, mark_driver_arrived, finish_reservation
+from models import get_reservation_by_driver_and_parking, cancel_reservation, get_reservation
 from utils.geocode import geocode_location
 import requests
 
@@ -22,6 +24,9 @@ app = Flask(
 )
 
 app.secret_key = 'clave-secreta'
+
+# Inicializar SocketIO
+socketio = SocketIO(app)
 
 # Registrar blueprints
 app.register_blueprint(auth)
@@ -331,273 +336,587 @@ def parking_update(parking_id):
             raw = form.get(key)
             try:
                 data[key] = float(raw) if raw not in (None, '', 'None') else None
-            except Exception:
+            except ValueError:
                 data[key] = None
-    # image handling
-    if 'image' in request.files:
-        img = request.files.get('image')
-        if img and img.filename:
-            uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
-            os.makedirs(uploads_dir, exist_ok=True)
-            filename = secure_filename(img.filename)
-            unique_name = f"{int(time())}_{filename}"
-            save_path = os.path.join(uploads_dir, unique_name)
-            img.save(save_path)
-            data['image_path'] = f"/static/uploads/{unique_name}"
+
+    # Actualizar en la base de datos
     try:
-        # verify ownership
-        p = get_parking(parking_id)
-        if not p:
-            return jsonify({'error':'not found'}), 404
-        if p['owner_id'] != session['user_id']:
-            return jsonify({'error':'forbidden'}), 403
-        # Si no se envían coordenadas explícitas en el form, intentar geocodificar
-        need_geo = False
-        if 'latitude' not in data or data.get('latitude') in (None, ''):
-            need_geo = True
-        if 'longitude' not in data or data.get('longitude') in (None, ''):
-            need_geo = True
-        if need_geo:
-            addr = data.get('address') or p.get('address')
-            dept = data.get('department') or p.get('department')
-            cityv = data.get('city') or p.get('city')
-            g_lat, g_lon = geocode_location(department=dept, city=cityv, address=addr, country_hint=None)
-            if g_lat is not None and g_lon is not None:
-                # sólo añadir las coordenadas que falten
-                if not data.get('latitude'):
-                    data['latitude'] = g_lat
-                if not data.get('longitude'):
-                    data['longitude'] = g_lon
-        update_parking(parking_id, **data)
-        p2 = get_parking(parking_id)
-        resp = {'success': True, 'parking': p2}
-        if p2.get('latitude') is None or p2.get('longitude') is None:
-            resp['geocode_failed'] = True
-            resp['message'] = 'No se pudieron obtener coordenadas desde la dirección; por favor añade latitud/longitud manualmente si es necesario.'
-        return jsonify(resp)
+        conn = get_connection()
+        cur = conn.cursor()
+        # Ensure owner owns this parking
+        cur.execute('SELECT owner_id FROM parkings WHERE id = ?', (parking_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return {'error': 'not found'}, 404
+        if row[0] != session['user_id']:
+            conn.close()
+            return {'error': 'forbidden'}, 403
+        # Actualizar solo los campos que fueron enviados
+        set_clause = ', '.join(f"{k} = ?" for k in data.keys())
+        cur.execute(f'UPDATE parkings SET {set_clause} WHERE id = ?', (*data.values(), parking_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/parkings/<int:parking_id>/delete', methods=['POST'])
-def parking_delete(parking_id):
+@app.route('/profile')
+def profile():
     if 'user_id' not in session:
-        return jsonify({'error':'not authenticated'}), 401
+        return redirect(url_for('auth.login'))
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, email, phone, role FROM users WHERE id = ?", (session['user_id'],))
+    user = cursor.fetchone()
+    conn.close()
+    if not user:
+        return redirect(url_for('auth.logout'))  # Forzar logout si no se encuentra el usuario
+    return render_template('profile.html', user=user)
+
+
+@app.route('/profile/update', methods=['POST'])
+def profile_update():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    data = request.form
+    user_id = session['user_id']
+    name = data.get('name')
+    email = data.get('email')
+    phone = data.get('phone')
+
+    # Validar datos mínimos
+    if not all([name, email, phone]):
+        return jsonify({'success': False, 'error': 'Por favor completa todos los campos.'}), 400
+
     try:
-        p = get_parking(parking_id)
-        if not p:
-            return jsonify({'error':'not found'}), 404
-        if p['owner_id'] != session['user_id']:
-            return jsonify({'error':'forbidden'}), 403
-        delete_parking(parking_id)
-        return jsonify({'success': True, 'id': parking_id})
+        conn = get_connection()
+        cur = conn.cursor()
+        # Actualizar usuario
+        cur.execute('UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?', (name, email, phone, user_id))
+        conn.commit()
+        conn.close()
+        # Actualizar datos en la sesión
+        session['name'] = name
+        session['email'] = email
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/reservations')
+def reservations():
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Obtener reservas del conductor
+    cursor.execute('''
+        SELECT r.id, p.name, r.start_time, r.end_time, r.status
+        FROM reservations r
+        JOIN parkings p ON r.parking_id = p.id
+        WHERE r.driver_id = ?
+    ''', (session['user_id'],))
+    reservations = cursor.fetchall()
+    conn.close()
+    return render_template('reservations.html', reservations=reservations)
+
+
+@app.route('/reservations/create', methods=['POST'])
+def create_reservation():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    data = request.get_json(silent=True) or {}
+    # Validar datos
+    required_fields = ['parking_id', 'start_time', 'end_time']
+    if not all(field in data for field in required_fields):
+        return jsonify({'success': False, 'error': 'Faltan datos requeridos.'}), 400
+
+    try:
+        # Crear reserva
+        reservation_id = add_reservation(driver_id=session['user_id'], parking_id=data['parking_id'],
+                                        start_time=data['start_time'], end_time=data['end_time'])
+        if not reservation_id:
+            return jsonify({'success': False, 'error': 'No se pudo crear la reserva.'}), 500
+        return jsonify({'success': True, 'reservation_id': reservation_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/reservations/<int:reservation_id>/cancel', methods=['POST'])
+def cancel_reservation_route(reservation_id):
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        result = cancel_reservation(reservation_id, session['user_id'])
+        if not result:
+            return jsonify({'success': False, 'error': 'No se pudo cancelar la reserva.'}), 500
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/parkings/active', methods=['GET'])
-def api_active_parkings():
-    # devuelve los parqueaderos activos para que el conductor los vea en el mapa
+def api_get_active_parkings():
+    """API pública: lista de parqueaderos activos."""
     try:
-        # soportar filtro por bbox (minLat,minLng,maxLat,maxLng)
+        parkings = get_active_parkings()
+        # Soportar filtro por bbox (minLat,minLng,maxLat,maxLng)
         bbox = request.args.get('bbox')
         if bbox:
             try:
                 parts = [float(x) for x in bbox.split(',')]
                 if len(parts) == 4:
-                    min_lat, min_lng, max_lat, max_lng = parts
-                else:
-                    raise ValueError('bbox must have 4 numbers')
+                    minLat, minLng, maxLat, maxLng = parts
+                    def in_bbox(p):
+                        try:
+                            lat = float(p.get('latitude'))
+                            lng = float(p.get('longitude'))
+                        except Exception:
+                            return False
+                        return lat >= minLat and lat <= maxLat and lng >= minLng and lng <= maxLng
+                    parkings = [p for p in parkings if in_bbox(p)]
             except Exception:
-                return jsonify({'success': False, 'error': 'invalid bbox'}), 400
-            conn = get_connection()
-            cur = conn.cursor()
-            # latitude between min_lat and max_lat and longitude between min_lng and max_lng
-            cur.execute('SELECT id, owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude FROM parkings WHERE active = 1 AND latitude IS NOT NULL AND longitude IS NOT NULL AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?', (min_lat, max_lat, min_lng, max_lng))
-            rows = cur.fetchall()
-            conn.close()
-            parkings = []
-            for r in rows:
-                parkings.append({
-                    'id': r[0], 'owner_id': r[1], 'name': r[2], 'phone': r[3], 'email': r[4], 'address': r[5],
-                    'department': r[6], 'city': r[7], 'housing_type': r[8], 'size': r[9], 'features': r[10], 'image_path': r[11],
-                    'latitude': r[12], 'longitude': r[13]
-                })
-        else:
-            parkings = get_active_parkings()
-        # Para mejorar la precisión del mapa: intentar geocodificar y persistir coordenadas
-        updated = False
-        for p in parkings:
-            lat = p.get('latitude')
-            lon = p.get('longitude')
-            if lat is None or lon is None:
-                # Intentar geocodificar con address/city/department
-                g_lat, g_lon = geocode_location(department=p.get('department'), city=p.get('city'), address=p.get('address'))
-                if g_lat is not None and g_lon is not None:
-                    try:
-                        update_parking(p['id'], latitude=g_lat, longitude=g_lon)
-                        p['latitude'] = g_lat
-                        p['longitude'] = g_lon
-                        updated = True
-                    except Exception:
-                        # si no se puede persistir, igual devolver las coordenadas calculadas
-                        p['latitude'] = g_lat
-                        p['longitude'] = g_lon
-        # Si hubo actualizaciones, podríamos volver a obtener la lista; no es necesario
-        return jsonify({'success': True, 'parkings': parkings})
+                # ignorar bbox inválido y devolver todos
+                pass
+
+        result = [{
+            'id': p['id'],
+            'name': p['name'],
+            'address': p.get('address'),
+            'latitude': p.get('latitude'),
+            'longitude': p.get('longitude'),
+            'owner_id': p.get('owner_id'),
+            'status': 'Libre'
+        } for p in parkings]
+        return jsonify({'success': True, 'parkings': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/admin/import_locations', methods=['POST'])
-def admin_import_locations():
-    """
-    Endpoint (privado) para importar un JSON de localidades (departamento -> ciudades).
-    Recibe JSON body: { "url": "https://raw.../file.json" }
-    Guarda el archivo en static/data/colombia_locations.json
-    """
+@app.route('/api/parkings/<int:parking_id>/delete', methods=['POST'])
+def api_delete_parking(parking_id):
+    """API para eliminar un parqueadero."""
     if 'user_id' not in session:
-        return jsonify({'error': 'not authenticated'}), 401
-    # simple permiso: solo arrendadores (puedes ajustarlo)
-    if session.get('role') != 'arrendador':
-        return jsonify({'error': 'forbidden'}), 403
-    data = request.get_json(silent=True) or {}
-    url = data.get('url')
-    if not url:
-        return jsonify({'error': 'missing url'}), 400
+        return jsonify({'success': False, 'error': 'No autenticado'}), 401
+        
+    # Verificar que el usuario sea el dueño del parqueadero
+    parking = get_parking(parking_id)
+    if not parking:
+        return jsonify({'success': False, 'error': 'Parqueadero no encontrado'}), 404
+    if parking['owner_id'] != session['user_id']:
+        return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
     try:
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        js = r.json()
-        # validar forma básica: debe ser un dict con listas
-        if not isinstance(js, dict):
-            return jsonify({'error': 'invalid json format'}), 400
-        # guardar en static/data
-        out_path = os.path.join(BASE_DIR, 'static', 'data', 'colombia_locations.json')
-        with open(out_path, 'w', encoding='utf-8') as f:
-            import json
-            json.dump(js, f, ensure_ascii=False, indent=2)
-        return jsonify({'success': True, 'message': 'Imported file saved.'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/driver/stats', methods=['GET'])
-def api_driver_stats():
-    if 'user_id' not in session:
-        return jsonify({'error': 'not authenticated'}), 401
-    driver_id = session['user_id']
-    try:
-        reservations = get_reservations_count_by_driver(driver_id)
-        rating_sum = get_rating_sum_for_driver(driver_id)
-        return jsonify({'success': True, 'reservations_count': reservations, 'rating_sum': rating_sum})
+        delete_parking(parking_id)
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-@app.route('/api/owner/parkings', methods=['GET'])
-def api_owner_parkings():
-    if 'user_id' not in session:
-        return jsonify({'error': 'not authenticated'}), 401
+@app.route('/api/parkings/<int:parking_id>', methods=['GET'])
+def api_get_parking(parking_id):
+    """API pública: detalles de un parqueadero."""
+            
+    # Método GET
     try:
-        owner_id = session['user_id']
-        parkings = get_parkings_by_owner(owner_id)
-        return jsonify({'success': True, 'parkings': parkings})
+        p = get_parking(parking_id)
+        if not p:
+            return jsonify({'success': False, 'error': 'Parqueadero no encontrado'}), 404
+        return jsonify({
+            'id': p['id'],
+            'name': p['name'],
+            'address': p['address'],
+            'latitude': p['latitude'],
+            'longitude': p['longitude'],
+            'owner_id': p['owner_id'],
+            'status': 'Libre'  # Asignar estado por defecto
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/reservations', methods=['POST'])
-def create_reservation():
+def api_create_reservation():
+    """API del conductor: crear una nueva reserva."""
     if 'user_id' not in session:
-        return jsonify({'error': 'not authenticated'}), 401
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    
     data = request.get_json(silent=True) or {}
-    if 'parking_id' not in data:
-        return jsonify({'error': 'missing parking_id'}), 400
-    try:
-        driver_id = session['user_id']
-        parking_id = data['parking_id']
-        # aceptar duration_minutes (min 10) y eta_minutes (>=0)
-        try:
-            duration = int(data.get('duration_minutes', 10))
-        except Exception:
-            duration = 10
-        if duration < 10:
-            duration = 10
-        try:
-            eta = int(data.get('eta_minutes', 0))
-        except Exception:
-            eta = 0
-        if eta < 0:
-            eta = 0
-        reservation = add_reservation(driver_id, parking_id, duration_minutes=duration, eta_minutes=eta)
-        if not reservation:
-            return jsonify({'error': 'could not create reservation'}), 500
-        return jsonify({'success': True, 'reservation': reservation})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/reservations', methods=['GET'])
-def get_reservation():
-    """Consulta si el conductor actual tiene una reserva para un parqueadero dado.
-    Parámetro query: parking_id
-    """
-    if 'user_id' not in session:
-        return jsonify({'error': 'not authenticated'}), 401
-    parking_id = request.args.get('parking_id')
+    parking_id = data.get('parking_id')
+    duration_minutes = data.get('duration_minutes', 10)
+    eta_minutes = data.get('eta_minutes', 0)
+    
     if not parking_id:
-        return jsonify({'error': 'missing parking_id'}), 400
+        return jsonify({'success': False, 'error': 'Se requiere parking_id'}), 400
+    
     try:
-        driver_id = session['user_id']
-        try:
-            pid = int(parking_id)
-        except Exception:
-            return jsonify({'error': 'invalid parking_id'}), 400
-        res = get_reservation_by_driver_and_parking(driver_id, pid)
-        if not res:
-            return jsonify({'success': True, 'exists': False})
-        return jsonify({'success': True, 'exists': True, 'reservation': res})
+        # Verificar si ya existe una reserva activa para este parqueadero
+        existing = get_reservation_by_driver_and_parking(session['user_id'], parking_id)
+        if existing and existing.get('status') not in ['cancelled', 'completed']:
+            return jsonify({'success': False, 'error': 'Ya tienes una reserva activa para este parqueadero'}), 400
+            
+        # Crear la reserva
+        reservation = add_reservation(
+            driver_id=session['user_id'],
+            parking_id=parking_id,
+            duration_minutes=duration_minutes,
+            eta_minutes=eta_minutes
+        )
+        
+        if not reservation:
+            return jsonify({'success': False, 'error': 'No se pudo crear la reserva'}), 500
+            
+        return jsonify({
+            'success': True,
+            'reservation': reservation
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/driver', methods=['GET'])
+def api_get_driver_reservations():
+    """API del conductor: obtener reservas del conductor."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Obtener reservas del conductor
+        cursor.execute('''
+            SELECT r.id, p.name, r.start_time, r.end_time, r.status
+            FROM reservations r
+            JOIN parkings p ON r.parking_id = p.id
+            WHERE r.driver_id = ?
+        ''', (session['user_id'],))
+        reservations = cursor.fetchall()
+        conn.close()
+        return jsonify([{
+            'id': r['id'],
+            'parking_name': r['name'],
+            'start_time': r['start_time'],
+            'end_time': r['end_time'],
+            'status': r['status']
+        } for r in reservations])
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/reservations/<int:reservation_id>/cancel', methods=['POST'])
-def api_cancel_reservation(reservation_id):
+@app.route('/api/users/profile', methods=['GET'])
+def api_get_user_profile():
+    """API del usuario: obtener información del perfil."""
     if 'user_id' not in session:
-        return jsonify({'error': 'not authenticated'}), 401
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
     try:
-        # verificar que la reserva pertenezca al usuario
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, email, phone, role FROM users WHERE id = ?", (session['user_id'],))
+        user = cursor.fetchone()
+        conn.close()
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        return jsonify({
+            'id': user['id'],
+            'name': user['name'],
+            'email': user['email'],
+            'phone': user['phone'],
+            'role': user['role']
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/users/profile/update', methods=['POST'])
+def api_update_user_profile():
+    """API del usuario: actualizar información del perfil."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    data = request.get_json(silent=True) or {}
+    user_id = session['user_id']
+    name = data.get('name')
+    email = data.get('email')
+    phone = data.get('phone')
+
+    # Validar datos mínimos
+    if not all([name, email, phone]):
+        return jsonify({'success': False, 'error': 'Por favor completa todos los campos.'}), 400
+
+    try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('SELECT driver_id FROM reservations WHERE id = ?', (reservation_id,))
-        row = cur.fetchone()
+        # Actualizar usuario
+        cur.execute('UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?', (name, email, phone, user_id))
+        conn.commit()
         conn.close()
-        if not row:
-            return jsonify({'error': 'not found'}), 404
-        if row[0] != session['user_id']:
-            return jsonify({'error': 'forbidden'}), 403
-        ok = cancel_reservation(reservation_id)
-        if not ok:
-            return jsonify({'success': False, 'error': 'could not cancel reservation'}), 500
-        return jsonify({'success': True, 'id': reservation_id})
+        # Actualizar datos en la sesión
+        session['name'] = name
+        session['email'] = email
+        return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# Ejecutar la app
-if __name__ == '__main__':
-    create_users_table()
-    # Crear tabla parkings si no existe
+@app.route('/api/parkings/<int:parking_id>/reserve', methods=['POST'])
+def api_reserve_parking(parking_id):
+    """API pública: reservar un parqueadero."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    data = request.get_json(silent=True) or {}
+    # Validar datos
+    required_fields = ['start_time', 'end_time']
+    if not all(field in data for field in required_fields):
+        return jsonify({'success': False, 'error': 'Faltan datos requeridos.'}), 400
+
     try:
+        # Crear reserva
+        reservation_id = add_reservation(driver_id=session['user_id'], parking_id=parking_id,
+                                        start_time=data['start_time'], end_time=data['end_time'])
+        if not reservation_id:
+            return jsonify({'success': False, 'error': 'No se pudo crear la reserva.'}), 500
+        return jsonify({'success': True, 'reservation_id': reservation_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reservations/<int:reservation_id>/finish', methods=['POST'])
+def api_finish_reservation(reservation_id):
+    """API para finalizar una reserva."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+        
+    try:
+        # Obtener la reserva para verificar permisos
+        reservation = get_reservation(reservation_id)
+        if not reservation:
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        # Verificar que el usuario sea el conductor o el dueño del parqueadero
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT owner_id FROM parkings WHERE id = ?', (reservation['parking_id'],))
+        parking = cursor.fetchone()
+        conn.close()
+
+        if not (reservation['driver_id'] == session['user_id'] or (parking and parking[0] == session['user_id'])):
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+            
+        if reservation['status'] not in ['arrived', 'active']:
+            return jsonify({'success': False, 'error': 'La reserva no está activa o el conductor no ha llegado'}), 400
+            
+        # Finalizar la reserva y enviar notificaciones
+        success = finish_reservation(reservation_id, session['user_id'])
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'No se pudo finalizar la reserva'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/arrived', methods=['POST'])
+def api_mark_arrived(reservation_id):
+    """API del conductor: marcar que ha llegado al parqueadero."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    
+    try:
+        # Obtener la reserva para verificar permisos
+        reservation = get_reservation(reservation_id)
+        if not reservation:
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+            
+        if reservation['driver_id'] != session['user_id']:
+            return jsonify({'success': False, 'error': 'No autorizado para esta reserva'}), 403
+            
+        if reservation['status'] == 'cancelled':
+            return jsonify({'success': False, 'error': 'La reserva ya fue cancelada'}), 400
+            
+        success = mark_driver_arrived(reservation_id)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'No se pudo registrar la llegada'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/cancel', methods=['POST'])
+def api_cancel_reservation(reservation_id):
+    """API pública: cancelar una reserva."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        user_id = session['user_id']
+        # La función actualizada de cancel_reservation maneja las notificaciones
+        result = cancel_reservation(reservation_id, user_id)
+        if not result:
+            return jsonify({'success': False, 'error': 'No se pudo cancelar la reserva.'}), 500
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/notifications')
+def get_notifications():
+    """API para obtener las notificaciones del usuario."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+        
+    try:
+        notifications = get_notifications_by_user(session['user_id'])
+        return jsonify({
+            'success': True,
+            'notifications': notifications
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/mark-read', methods=['POST'])
+def mark_notifications_read():
+    """API para marcar todas las notificaciones como leídas."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+        
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notifications SET status = 'read' WHERE user_id = ? AND status = 'unread'",
+                      (session['user_id'],))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/parkings/nearby', methods=['GET'])
+def api_get_nearby_parkings():
+    """API pública: buscar parqueaderos cercanos a una ubicación."""
+    # Se esperan parámetros de consulta: latitud, longitud, y opcionalmente radio en metros
+    lat = request.args.get('lat')
+    lon = request.args.get('lon')
+    radius = request.args.get('radius', default=500, type=int)  # Radio por defecto 500 metros
+
+    if not lat or not lon:
+        return jsonify({'success': False, 'error': 'Faltan latitud y/o longitud.'}), 400
+
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Latitud y longitud deben ser números.'}), 400
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Buscar parqueaderos en un radio alrededor de la ubicación dada
+        cursor.execute('''
+            SELECT id, name, address, latitude, longitude, owner_id
+            FROM parkings
+            WHERE active = 1 AND latitude IS NOT NULL AND longitude IS NOT NULL
+            AND (6371000 * acos(
+                cos(radians(?)) * cos(radians(latitude)) *
+                cos(radians(longitude) - radians(?)) +
+                sin(radians(?)) * sin(radians(latitude))
+            )) <= ?
+        ''', (lat, lon, lat, radius))
+        parkings = cursor.fetchall()
+        conn.close()
+        return jsonify([{
+            'id': p['id'],
+            'name': p['name'],
+            'address': p['address'],
+            'latitude': p['latitude'],
+            'longitude': p['longitude'],
+            'owner_id': p['owner_id'],
+            'status': 'Libre'  # Asignar estado por defecto
+        } for p in parkings])
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# === Rutas para pruebas y depuración ===
+@app.route('/debug/killall')
+def debug_kill_all():
+    """Ruta de depuración: termina todas las sesiones y procesos de fondo."""
+    if os.environ.get('FLASK_ENV') == 'development':
+        os._exit(0)
+    return 'OK'
+
+
+@app.route('/debug/db/reset', methods=['POST'])
+def debug_db_reset():
+    """Ruta de depuración: reinicia la base de datos (borrar y crear tablas)."""
+    if os.environ.get('FLASK_ENV') != 'development':
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        # Borrar datos existentes
+        c.execute('DROP TABLE IF EXISTS users')
+        c.execute('DROP TABLE IF EXISTS parkings')
+        c.execute('DROP TABLE IF EXISTS reservations')
+        c.execute('DROP TABLE IF EXISTS reviews')
+        # Crear tablas nuevamente
+        create_users_table()
         create_parkings_table()
-    except Exception:
-        pass
-    # Crear tablas nuevas para reservas y reseñas
-    try:
         create_reservations_table()
         create_reviews_table()
-    except Exception:
-        pass
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/debug/populate', methods=['POST'])
+def debug_populate():
+    """Ruta de depuración: llena la base de datos con datos de prueba."""
+    if os.environ.get('FLASK_ENV') != 'development':
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        # Insertar usuarios de prueba
+        c.executemany('''
+            INSERT INTO users (name, email, password, phone, role) VALUES (?, ?, ?, ?, ?)
+        ''', [
+            ('Conductor Uno', 'conductor1@example.com', 'password', '3001112233', 'conductor'),
+            ('Conductor Dos', 'conductor2@example.com', 'password', '3002233445', 'conductor'),
+            ('Arrendador Uno', 'arrendador1@example.com', 'password', '3109876543', 'arrendador'),
+            ('Arrendador Dos', 'arrendador2@example.com', 'password', '3108765432', 'arrendador')
+        ])
+        # Insertar parqueaderos de prueba
+        c.executemany('''
+            INSERT INTO parkings (owner_id, name, phone, email, address, department, city, housing_type, size, features, image_path, latitude, longitude, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            (3, 'Parqueadero Centro', '3001112233', 'contacto@example.com', 'Calle 10 # 10-10', 'Antioquia', 'Medellín', 'Edificio', 'Pequeño', 'Cubierto', None, 6.2442, -75.5812, 1),
+            (3, 'Parqueadero Norte', '3002223344', 'contacto@example.com', 'Carrera 30 # 20-20', 'Antioquia', 'Medellín', 'Casa', 'Mediano', 'Descubierto', None, 6.2518, -75.5636, 1),
+            (4, 'Parqueadero Sur', '3109876543', 'contacto@example.com', 'Avenida 80 # 10-10', 'Cundinamarca', 'Bogotá', 'Edificio', 'Grande', 'Cubierto, CCTV', None, 4.6097, -74.0817, 1),
+            (4, 'Parqueadero Este', '3108765432', 'contacto@example.com', 'Transversal 50 # 20-20', 'Cundinamarca', 'Bogotá', 'Casa', 'Pequeño', 'Descubierto', None, 4.6100, -74.0700, 1)
+        ])
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+if __name__ == '__main__':
+    # Crear tablas necesarias al iniciar
+    from models import create_notifications_table
+    create_users_table()
+    create_parkings_table()
+    create_reservations_table()
+    create_reviews_table()
+    create_notifications_table()
+    # Start SocketIO server; bind to 0.0.0.0 so it's reachable from host
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+# API para obtener los parqueaderos del arrendador (dashboard)
+@app.route('/api/owner/parkings', methods=['GET'])
+def api_owner_parkings():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        parkings = get_parkings_by_owner(session['user_id'])
+        return jsonify({'success': True, 'parkings': parkings})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
