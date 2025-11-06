@@ -5,14 +5,38 @@ from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_socketio import SocketIO
 from routes.auth import auth
-from models import get_connection
-from models import create_parkings_table, add_parking, get_parkings_by_owner
-from models import get_parking, update_parking, delete_parking
-from models import create_reservations_table, create_reviews_table, get_active_parkings, get_reservations_count_by_driver, get_rating_sum_for_driver
-from models import add_reservation, add_notification, get_notifications_by_user, mark_driver_arrived, finish_reservation
-from models import get_reservation_by_driver_and_parking, cancel_reservation, get_reservation
+# Usar las funciones centralizadas de acceso a DB desde models
+from models import (
+    get_connection,
+    create_users_table,
+    add_user,
+    get_user_by_email,
+    create_parkings_table,
+    add_parking,
+    get_parkings_by_owner,
+    get_parking,
+    update_parking,
+    delete_parking,
+    create_reservations_table,
+    create_reviews_table,
+    get_active_parkings,
+    get_reservations_count_by_driver,
+    get_rating_sum_for_driver,
+    add_reservation,
+    add_notification,
+    get_notifications_by_user,
+    mark_driver_arrived,
+    finish_reservation,
+    get_reservation_by_driver_and_parking,
+    cancel_reservation,
+    get_reservation,
+    add_review,
+    notify_expired_reservations,
+)
 from utils.geocode import geocode_location
 import requests
+import threading
+import time as _time
 
 # Configuración rutas absolutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,49 +54,12 @@ socketio = SocketIO(app)
 
 # Registrar blueprints
 app.register_blueprint(auth)
-DB_NAME = os.path.join(BASE_DIR, 'tincar.db')
+DB_NAME = os.path.join(BASE_DIR, 'database', 'tincar.db')
 
+# Alias a la conexión centralizada en models.py para unificar el acceso a la DB
+get_db_connection = get_connection
 
-# === Funciones de base de datos ===
-def get_db_connection():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row  # Permite acceder por nombre de columna
-    return conn
-
-
-def create_users_table():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            phone TEXT,
-            role TEXT NOT NULL
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-
-def get_user_by_email(email):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('SELECT * FROM users WHERE email = ?', (email,))
-    user = c.fetchone()
-    conn.close()
-    return user
-
-
-def insert_user(name, email, password, role):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-              (name, email, password, role))
-    conn.commit()
-    conn.close()
+# Las funciones de usuarios (create, add, get) vienen de models.py: create_users_table, add_user, get_user_by_email
 
 
 # === Rutas principales ===
@@ -617,6 +604,118 @@ def api_get_driver_reservations():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/reservations/active/driver', methods=['GET'])
+def api_get_active_reservations_driver():
+    """Devuelve las reservas activas (pending/arrived/active) del conductor logueado."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+         SELECT r.id, r.status, r.duration_minutes, r.eta_minutes, r.created_at, r.driver_id,
+             u.name as driver_name, r.parking_id, p.name as parking_name, p.address, p.occupied_since
+            FROM reservations r
+            LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN parkings p ON r.parking_id = p.id
+            WHERE r.driver_id = ? AND r.status IN ('pending','arrived','active')
+            ORDER BY r.created_at DESC
+        ''', (session['user_id'],))
+        rows = cursor.fetchall()
+        conn.close()
+        out = []
+        for r in rows:
+            # Some DBs may return columns by index or by name; normalize
+            try:
+                out.append({
+                    'id': r['id'],
+                    'status': r['status'],
+                    'occupied_since': r['occupied_since'] if 'occupied_since' in r.keys() else None,
+                    'duration_minutes': r['duration_minutes'] if 'duration_minutes' in r.keys() else None,
+                    'eta': r['eta_minutes'] if 'eta_minutes' in r.keys() else None,
+                    'created_at': r['created_at'],
+                    'driver_id': r['driver_id'],
+                    'driver_name': r['driver_name'],
+                    'parking_id': r['parking_id'],
+                    'parking_name': r['parking_name'],
+                    'address': r['address']
+                })
+            except Exception:
+                # fallback to index-based
+                out.append({
+                    'id': r[0], 'status': r[1], 'duration_minutes': r[2] if len(r) > 2 else None,
+                    'eta': r[3] if len(r) > 3 else None, 'created_at': r[4] if len(r) > 4 else None,
+                    'driver_id': r[5] if len(r) > 5 else None, 'driver_name': r[6] if len(r) > 6 else None,
+                    'parking_id': r[7] if len(r) > 7 else None, 'parking_name': r[8] if len(r) > 8 else None,
+                    'address': r[9] if len(r) > 9 else None
+                })
+        return jsonify({'success': True, 'reservations': out})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reservations/active/owner', methods=['GET'])
+def api_get_active_reservations_owner():
+    """Devuelve las reservas activas para los parqueaderos del arrendador logueado."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+         SELECT r.id, r.status, r.duration_minutes, r.eta_minutes, r.created_at, r.driver_id,
+             u.name as driver_name, r.parking_id, p.name as parking_name, p.address, p.occupied_since
+            FROM reservations r
+            LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN parkings p ON r.parking_id = p.id
+            WHERE p.owner_id = ? AND r.status IN ('pending','arrived','active')
+            ORDER BY r.created_at DESC
+        ''', (session['user_id'],))
+        rows = cursor.fetchall()
+        conn.close()
+        out = []
+        for r in rows:
+            try:
+                # calcular si la reserva ya expiró (occupied_since + duration <= now)
+                expired = False
+                try:
+                    if r.get('occupied_since') and r.get('duration_minutes'):
+                        import datetime
+                        occ = datetime.datetime.fromisoformat(r['occupied_since'])
+                        now = datetime.datetime.utcnow()
+                        secs = (now - occ).total_seconds()
+                        elapsed_min = int((secs + 59) // 60) if secs > 0 else 0
+                        expired = elapsed_min >= int(r.get('duration_minutes', 0))
+                except Exception:
+                    expired = False
+
+                out.append({
+                    'id': r['id'],
+                    'status': r['status'],
+                    'duration_minutes': r.get('duration_minutes', None) if hasattr(r, 'keys') else (r[2] if len(r) > 2 else None),
+                    'eta': r.get('eta_minutes', None) if hasattr(r, 'keys') else (r[3] if len(r) > 3 else None),
+                    'created_at': r['created_at'] if 'created_at' in r.keys() else (r[4] if len(r) > 4 else None),
+                    'driver_id': r['driver_id'],
+                    'driver_name': r['driver_name'],
+                    'parking_id': r['parking_id'],
+                    'parking_name': r['parking_name'],
+                    'address': r['address'],
+                    'occupied_since': r['occupied_since'] if 'occupied_since' in r.keys() else None,
+                    'expired': expired
+                })
+            except Exception:
+                out.append({
+                    'id': r[0], 'status': r[1], 'duration_minutes': r[2] if len(r) > 2 else None,
+                    'eta': r[3] if len(r) > 3 else None, 'created_at': r[4] if len(r) > 4 else None,
+                    'driver_id': r[5] if len(r) > 5 else None, 'driver_name': r[6] if len(r) > 6 else None,
+                    'parking_id': r[7] if len(r) > 7 else None, 'parking_name': r[8] if len(r) > 8 else None,
+                    'address': r[9] if len(r) > 9 else None
+                })
+        return jsonify({'success': True, 'reservations': out})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/users/profile', methods=['GET'])
 def api_get_user_profile():
     """API del usuario: obtener información del perfil."""
@@ -718,6 +817,19 @@ def api_finish_reservation(reservation_id):
         if reservation['status'] not in ['arrived', 'active']:
             return jsonify({'success': False, 'error': 'La reserva no está activa o el conductor no ha llegado'}), 400
             
+        # Leer posible payload (rating opcional)
+        data = request.get_json(silent=True) or {}
+        rating = data.get('rating')
+        comment = data.get('comment')
+        # Si el arrendador envía una calificación, guardarla antes de finalizar
+        try:
+            if rating is not None:
+                # reviewer = usuario que finaliza (arrendador)
+                add_review(session['user_id'], reservation['driver_id'], reservation['parking_id'], int(rating), comment)
+        except Exception:
+            # No bloquear el flujo si falla la calificación
+            pass
+
         # Finalizar la reserva y enviar notificaciones
         success = finish_reservation(reservation_id, session['user_id'])
         if success:
@@ -798,6 +910,27 @@ def mark_notifications_read():
         conn.commit()
         conn.close()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/notifications/clear', methods=['POST'])
+def clear_notifications():
+    """Elimina todas las notificaciones del usuario exceptuando las que están relacionadas
+    con un proceso de reserva (reservation_id IS NOT NULL)."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Contar las notificaciones que se eliminarán (AHORA: todas las del usuario)
+        cursor.execute('SELECT COUNT(*) FROM notifications WHERE user_id = ?', (session['user_id'],))
+        to_delete = cursor.fetchone()[0]
+        # Eliminar todas las notificaciones del usuario (borrado permanente)
+        cursor.execute('DELETE FROM notifications WHERE user_id = ?', (session['user_id'],))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'deleted': to_delete})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -914,16 +1047,6 @@ def debug_populate():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-if __name__ == '__main__':
-    # Crear tablas necesarias al iniciar
-    from models import create_notifications_table
-    create_users_table()
-    create_parkings_table()
-    create_reservations_table()
-    create_reviews_table()
-    create_notifications_table()
-    # Start SocketIO server; bind to 0.0.0.0 so it's reachable from host
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
 # API para obtener los parqueaderos del arrendador (dashboard)
 @app.route('/api/owner/parkings', methods=['GET'])
 def api_owner_parkings():
@@ -934,3 +1057,28 @@ def api_owner_parkings():
         return jsonify({'success': True, 'parkings': parkings})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    # Crear tablas necesarias al iniciar
+    from models import create_notifications_table
+    create_users_table()
+    create_parkings_table()
+    create_reservations_table()
+    create_reviews_table()
+    create_notifications_table()
+    # Start background thread to check for expired reservations
+    def _expiration_worker():
+        from models import notify_expired_reservations
+        while True:
+            try:
+                notify_expired_reservations()
+            except Exception:
+                pass
+            _time.sleep(30)
+
+    t = threading.Thread(target=_expiration_worker, daemon=True)
+    t.start()
+
+    # Start SocketIO server; bind to 0.0.0.0 so it's reachable from host
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

@@ -362,9 +362,10 @@ def add_reservation(driver_id, parking_id, status='pending', duration_minutes=10
     # Marcar el parking como ocupado y guardar timestamp
     try:
         import datetime
-        occupied_ts = datetime.datetime.utcnow().isoformat()
+        # Reservar el parking (lo bloqueamos para evitar doble reserva) pero no fijamos
+        # `occupied_since` hasta que el conductor confirme llegada.
         try:
-            update_parking(parking_id, active=0, occupied_since=occupied_ts)
+            update_parking(parking_id, active=0, occupied_since=None)
         except Exception:
             pass
     except Exception:
@@ -383,6 +384,41 @@ def add_notification(user_id, message, type, reservation_id=None, owner_id=None,
     ''', (user_id, message, type, reservation_id, owner_id, eta, extra_data))
     conn.commit()
     conn.close()
+
+
+def delete_notifications_for_reservation(reservation_id, types_to_remove=None, user_id=None):
+    """Elimina notificaciones asociadas a una reserva.
+
+    - reservation_id: id de la reserva cuyas notificaciones se eliminarán.
+    - types_to_remove: lista opcional de tipos a eliminar; si es None se eliminan todas las notifs para esa reserva.
+    - user_id: si se pasa, limitar la eliminación a ese usuario.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if types_to_remove and len(types_to_remove) > 0:
+            # Construir placeholders para tipos
+            placeholders = ','.join('?' for _ in types_to_remove)
+            if user_id:
+                sql = f"DELETE FROM notifications WHERE reservation_id = ? AND type IN ({placeholders}) AND user_id = ?"
+                params = [reservation_id] + list(types_to_remove) + [user_id]
+            else:
+                sql = f"DELETE FROM notifications WHERE reservation_id = ? AND type IN ({placeholders})"
+                params = [reservation_id] + list(types_to_remove)
+        else:
+            if user_id:
+                sql = "DELETE FROM notifications WHERE reservation_id = ? AND user_id = ?"
+                params = (reservation_id, user_id)
+            else:
+                sql = "DELETE FROM notifications WHERE reservation_id = ?"
+                params = (reservation_id,)
+        cursor.execute(sql, params)
+        conn.commit()
+    except Exception:
+        # No fallar si algo va mal; el proceso principal debe continuar
+        pass
+    finally:
+        conn.close()
 
 
 def get_notifications_by_user(user_id):
@@ -519,6 +555,11 @@ def cancel_reservation(reservation_id, cancelled_by_id):
         print(f"Error reactivando parqueadero: {e}")
 
     try:
+        # Antes de crear notificaciones nuevas, eliminar notificaciones previas de esta reserva
+        try:
+            delete_notifications_for_reservation(reservation_id)
+        except Exception:
+            pass
         # Determinar quién canceló y crear notificaciones apropiadas
         if cancelled_by_id == reservation['driver_id']:
             # El conductor canceló
@@ -600,15 +641,31 @@ def get_active_parkings():
 
 
 def finish_reservation(reservation_id, finished_by_id):
-    """Marca una reserva como 'completed' y envía notificaciones apropiadas."""
+    """Marca una reserva como 'completed', calcula tiempo usado/importe, registra calificación opcional
+    y envía notificaciones apropiadas.
+
+    Asunciones razonables: si no existe una tarifa por minuto en la DB, usamos una tarifa por defecto
+    de 100 unidades por minuto. La función acepta que el arrendador finalice la reserva y opcionalmente
+    envíe una calificación (la calificación se debe haber registrado previamente usando add_review).
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
     # Obtener la información de la reserva
     reservation = get_reservation(reservation_id)
-    if not reservation or reservation['status'] not in ['arrived', 'active']:
+    # Permitir que el arrendador finalice una reserva incluso si aún está en 'pending'.
+    # En condiciones normales el conductor sólo puede finalizar cuando está 'arrived' o 'active'.
+    if not reservation:
         conn.close()
         return False
+    if reservation['status'] not in ['arrived', 'active']:
+        # Si quien finaliza NO es el conductor (p.ej. arrendador) y la reserva está en 'pending', permitirlo.
+        if finished_by_id != reservation['driver_id'] and reservation['status'] == 'pending':
+            # continuar: el arrendador está forzando la finalización de una reserva pendiente
+            pass
+        else:
+            conn.close()
+            return False
         
     # Obtener información del conductor y del parqueadero
     cursor.execute('SELECT name FROM users WHERE id = ?', (reservation['driver_id'],))
@@ -620,10 +677,40 @@ def finish_reservation(reservation_id, finished_by_id):
     owner_id = parking_row[0] if parking_row else None
     parking_name = parking_row[1] if parking_row else "el parqueadero"
     
+    # Calcular tiempo usado y total a cobrar (si es posible)
+    elapsed_minutes = None
+    total_amount = None
+    try:
+        # Obtener occupied_since desde parkings
+        cursor.execute('SELECT occupied_since FROM parkings WHERE id = ?', (reservation['parking_id'],))
+        park_row = cursor.fetchone()
+        occupied_since = park_row[0] if park_row else None
+        if occupied_since:
+            try:
+                import datetime
+                occ = datetime.datetime.fromisoformat(occupied_since)
+                now = datetime.datetime.utcnow()
+                secs = (now - occ).total_seconds()
+                elapsed_minutes = int((secs + 59) // 60) if secs > 0 else 0
+            except Exception:
+                elapsed_minutes = None
+    except Exception:
+        elapsed_minutes = None
+
+    # tarifa por minuto por defecto (asunción): 100
+    rate_per_minute = 100
+    if elapsed_minutes is None:
+        # fallback a la duración planificada
+        elapsed_minutes = reservation.get('duration_minutes', None) or 0
+    try:
+        total_amount = int(elapsed_minutes) * int(rate_per_minute)
+    except Exception:
+        total_amount = None
+
     # Actualizar el estado de la reserva
     cursor.execute('UPDATE reservations SET status = ? WHERE id = ?', ('completed', reservation_id))
     conn.commit()
-    
+
     # Reactivar el parqueadero
     try:
         update_parking(reservation['parking_id'], active=1, occupied_since=None)
@@ -631,6 +718,11 @@ def finish_reservation(reservation_id, finished_by_id):
         print(f"Error reactivando parqueadero: {e}")
 
     try:
+        # Antes de crear notificaciones nuevas, limpiar notificaciones previas de esta reserva
+        try:
+            delete_notifications_for_reservation(reservation_id)
+        except Exception:
+            pass
         # Determinar quién finalizó la reserva y crear notificaciones apropiadas
         if finished_by_id == reservation['driver_id']:
             # El conductor finalizó
@@ -641,7 +733,7 @@ def finish_reservation(reservation_id, finished_by_id):
                     type='reservation_completed',
                     reservation_id=reservation_id,
                     owner_id=owner_id,
-                    extra_data=f'{{"completed_by": "driver", "driver_id": {reservation["driver_id"]}}}'
+                    extra_data=f'{{"completed_by": "driver", "driver_id": {reservation["driver_id"]}, "elapsed_minutes": {elapsed_minutes}, "amount": {total_amount}}}'
                 )
             # Notificación de confirmación para el conductor
             add_notification(
@@ -650,7 +742,7 @@ def finish_reservation(reservation_id, finished_by_id):
                 type='reservation_completed',
                 reservation_id=reservation_id,
                 owner_id=owner_id,
-                extra_data=f'{{"completed_by": "self", "parking_name": "{parking_name}"}}'
+                extra_data=f'{{"completed_by": "self", "parking_name": "{parking_name}", "elapsed_minutes": {elapsed_minutes}, "amount": {total_amount}}}'
             )
         else:
             # El arrendador finalizó
@@ -660,7 +752,7 @@ def finish_reservation(reservation_id, finished_by_id):
                 type='reservation_completed',
                 reservation_id=reservation_id,
                 owner_id=owner_id,
-                extra_data=f'{{"completed_by": "owner", "parking_name": "{parking_name}"}}'
+                extra_data=f'{{"completed_by": "owner", "parking_name": "{parking_name}", "elapsed_minutes": {elapsed_minutes}, "amount": {total_amount}}}'
             )
             if owner_id:
                 add_notification(
@@ -669,8 +761,10 @@ def finish_reservation(reservation_id, finished_by_id):
                     type='reservation_completed',
                     reservation_id=reservation_id,
                     owner_id=owner_id,
-                    extra_data=f'{{"completed_by": "self", "driver_id": {reservation["driver_id"]}}}'
+                    extra_data=f'{{"completed_by": "self", "driver_id": {reservation["driver_id"]}, "elapsed_minutes": {elapsed_minutes}, "amount": {total_amount}}}'
                 )
+        # Si quien finalizó es el arrendador y se envió una calificación por POST, el controlador del endpoint
+        # debe haber llamado a add_review separadamente; aquí no lo forzamos para no mezclar responsabilidades.
     except Exception as e:
         print(f"Error creando notificaciones de finalización: {e}")
     
@@ -698,33 +792,130 @@ def mark_driver_arrived(reservation_id):
     owner_id = parking_row[0] if parking_row else None
     parking_name = parking_row[1] if parking_row else "el parqueadero"
     
-    # Actualizar el estado de la reserva
-    cursor.execute('UPDATE reservations SET status = ? WHERE id = ?', ('arrived', reservation_id))
+    # Actualizar el estado de la reserva a 'active' (conductor ocupando el sitio)
+    cursor.execute('UPDATE reservations SET status = ? WHERE id = ?', ('active', reservation_id))
     conn.commit()
 
     try:
-        # Notificación para el arrendador
+        # Limpiar notificaciones anteriores relacionadas con esta reserva (p.ej. active_reservation / new_reservation)
+        try:
+            delete_notifications_for_reservation(reservation_id, types_to_remove=['active_reservation', 'new_reservation'])
+        except Exception:
+            pass
+        # Registrar occupied_since en el parking (timer inicia ahora)
+        import datetime
+        # Guardar con zona UTC explícita para que JS y Python parseen correctamente
+        occupied_ts = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
+        try:
+            update_parking(reservation['parking_id'], occupied_since=occupied_ts, active=0)
+        except Exception:
+            pass
+
+        # Notificación para el arrendador: indicar que el garaje está ocupado y pasar duración
         if owner_id:
             add_notification(
                 user_id=owner_id,
-                message=f"{driver_name} ha llegado a {parking_name}.",
-                type='driver_arrived',
+                message=f"{driver_name} ha ocupado {parking_name}.",
+                type='parking_occupied',
                 reservation_id=reservation_id,
                 owner_id=owner_id,
-                extra_data=f'{{"driver_id": {reservation["driver_id"]}, "driver_name": "{driver_name}"}}'
+                eta=None,
+                extra_data=f'{{"driver_id": {reservation["driver_id"]}, "driver_name": "{driver_name}", "duration": {reservation.get("duration_minutes", 10)}}}'
             )
-        
+
         # Notificación de confirmación para el conductor
         add_notification(
             user_id=reservation['driver_id'],
-            message=f'Has llegado a {parking_name}.',
+            message=f'Has llegado a {parking_name}. Empieza el tiempo de estacionamiento.',
             type='arrived_confirmation',
             reservation_id=reservation_id,
             owner_id=owner_id,
-            extra_data=f'{{"parking_name": "{parking_name}"}}'
+            extra_data=f'{{"parking_name": "{parking_name}", "duration": {reservation.get("duration_minutes", 10)}}}'
         )
     except Exception as e:
         print(f"Error creando notificaciones de llegada: {e}")
     
     conn.close()
     return True
+
+
+def notify_expired_reservations():
+    """Busca reservas con status 'active' cuyo tiempo desde occupied_since
+    excede duration_minutes y envía notificaciones (una sola vez) tanto al
+    arrendador como al conductor indicando que el tiempo finalizó y que el
+    arrendador puede finalizar el servicio.
+
+    Esta función está pensada para ejecutarse periódicamente desde el servidor
+    (ej. hilo background) o invocarse desde un endpoint de verificación.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Seleccionar reservas activas con occupied_since
+        cursor.execute('''
+            SELECT r.id, r.driver_id, r.parking_id, r.duration_minutes, u.name as driver_name,
+                   p.owner_id, p.name as parking_name, p.occupied_since
+            FROM reservations r
+            LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN parkings p ON r.parking_id = p.id
+            WHERE r.status = 'active' AND p.occupied_since IS NOT NULL
+        ''')
+        rows = cursor.fetchall()
+        import datetime
+        for r in rows:
+            try:
+                occ = r['occupied_since'] if 'occupied_since' in r.keys() else (r[7] if len(r) > 7 else None)
+                if not occ:
+                    continue
+                try:
+                    occ_dt = datetime.datetime.fromisoformat(occ)
+                except Exception:
+                    # Skip if date unparsable
+                    continue
+                now = datetime.datetime.utcnow()
+                elapsed_secs = (now - occ_dt).total_seconds()
+                elapsed_min = int((elapsed_secs + 59) // 60) if elapsed_secs > 0 else 0
+                desired = r['duration_minutes'] if 'duration_minutes' in r.keys() and r['duration_minutes'] is not None else (r[3] if len(r) > 3 else None)
+                if desired is None:
+                    continue
+                if elapsed_min >= int(desired):
+                    reservation_id = r['id'] if 'id' in r.keys() else r[0]
+                    owner_id = r['owner_id'] if 'owner_id' in r.keys() else r[5]
+                    driver_id = r['driver_id'] if 'driver_id' in r.keys() else r[1]
+                    parking_name = r['parking_name'] if 'parking_name' in r.keys() else (r[6] if len(r) > 6 else 'el parqueadero')
+                    driver_name = r['driver_name'] if 'driver_name' in r.keys() else (r[4] if len(r) > 4 else 'El conductor')
+                    # Evitar notificar repetidamente: buscar notificación previa de tipo 'reservation_expired'
+                    cursor.execute('SELECT COUNT(*) FROM notifications WHERE reservation_id = ? AND type = ?', (reservation_id, 'reservation_expired'))
+                    exists = cursor.fetchone()[0]
+                    if exists and exists > 0:
+                        continue
+                    # Limpiar notificaciones previas que puedan confundir (p.ej. parking_occupied)
+                    try:
+                        delete_notifications_for_reservation(reservation_id, types_to_remove=['parking_occupied'])
+                    except Exception:
+                        pass
+                    # Añadir notificación para el arrendador
+                    if owner_id:
+                        add_notification(
+                            user_id=owner_id,
+                            message=f"La reserva de {driver_name} en {parking_name} ha cumplido su tiempo. Finaliza el servicio para cobrar.",
+                            type='reservation_expired',
+                            reservation_id=reservation_id,
+                            owner_id=owner_id,
+                            extra_data=f'{{"driver_id": {driver_id}, "elapsed_minutes": {elapsed_min}}}'
+                        )
+                    # Añadir notificación para el conductor
+                    add_notification(
+                        user_id=driver_id,
+                        message=f"Tu tiempo en {parking_name} ha finalizado. Espera a que el arrendador finalice el servicio.",
+                        type='reservation_expired',
+                        reservation_id=reservation_id,
+                        owner_id=owner_id,
+                        extra_data=f'{{"elapsed_minutes": {elapsed_min}}}'
+                    )
+            except Exception:
+                continue
+    except Exception:
+        pass
+    finally:
+        conn.close()

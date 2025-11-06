@@ -36,6 +36,9 @@
         <div id="notificationsList">
           <!-- Las notificaciones se cargarán aquí dinámicamente -->
         </div>
+        <div class="text-center mt-3">
+          <button id="clearMailboxBtn" class="btn btn-outline-light" onclick="clearNotificationsMailbox()">Limpiar buzón</button>
+        </div>
       </div>
     </div>
   </div>
@@ -168,8 +171,12 @@
   <script src="{{ url_for('static', filename='js/driver.js') }}"></script>
 
   <script>
-    // Funciones para el manejo de notificaciones
-    let notifications = [];
+  // Funciones para el manejo de notificaciones
+  let notifications = [];
+  // Evitar reintentos paralelos de cancelación
+  window.pendingCancels = window.pendingCancels || new Set();
+  // Cuando el usuario limpia el buzón, mantener solo botones hasta cerrar modal
+  window.preserveNotificationsButtonsOnly = window.preserveNotificationsButtonsOnly || false;
 
     function updateNotificationCount() {
         const unreadCount = notifications.filter(n => n.status === 'unread').length;
@@ -186,17 +193,22 @@
     let html = '';
     if (notification.type === 'active_reservation') {
       html += `<p>Reservaste un garaje, recuerda llegar antes de <strong>${notification.eta || ''} minutos</strong>.</p>`;
-      html += `<hr><button class=\"btn btn-orange\" onclick=\"showGarageInfo(${notification.parking_id || 0})\">Garaje</button><button class=\"btn btn-outline-light\" onclick=\"cancelReservation(${notification.reservation_id})\">Cancelar reserva</button>`;
-    } else if (notification.type === 'arrived_confirmation') {
-      html += `<p>No llegaste al garaje en el tiempo estimulado.</p>`;
-      html += `<hr><button class=\"btn btn-orange\" onclick=\"showGarageInfo(${notification.parking_id || 0})\">Garaje</button><button class=\"btn btn-outline-light\" onclick=\"cancelReservation(${notification.reservation_id})\">Cancelar reserva</button>`;
-    } else {
-      html += `<p>${notification.message}</p>`;
-    }
-    return `<div class=\"notification-item ${notification.status === 'unread' ? 'unread' : ''}\" data-id=\"${notification.id}\">${html}</div>`;
-    }
-
-  function loadNotifications() {
+      // Mostrar sólo el texto para la notificación de reserva (sin botones en el buzón)
+      if (notification.type === 'active_reservation') {
+        html += `<p>Reservaste un garaje, recuerda llegar antes de <strong>${notification.eta || ''} minutos</strong>.</p>`;
+        html += `<hr>`;
+      } else if (notification.type === 'arrived_confirmation') {
+        // Usar el mensaje enviado por el servidor (por ejemplo: "Has llegado...")
+        html += `<p>${notification.message || 'Has llegado al parqueadero.'}</p>`;
+        html += `<hr>`;
+        // Controles adicionales (ver garaje / cancelar)
+        html += `<button class="btn btn-orange me-2" onclick="showGarageInfo(${notification.parking_id || 0})">Garaje</button>`;
+        html += `<button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
+      } else {
+        html += `<p>${notification.message}</p>`;
+      }
+      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+      }
       // Primero cargar reservas activas
       fetch('/api/reservations/active/driver')
         .then(response => response.json())
@@ -207,8 +219,10 @@
               <div class="notification-item active-reservation">
                 <p>Reserva activa del garaje <strong>${r.parking_name}</strong>.</p>
                 <hr>
-                <button class="btn btn-orange" onclick="finishReservation(${r.id})">Finalizar</button>
+                ${r.status === 'pending' ? `<button class="btn btn-success me-2" onclick="markAsArrived(${r.id})">Llegué</button>` : ''}
+                <button class="btn btn-orange me-2" onclick="finishReservation(${r.id})">Finalizar</button>
                 <button class="btn btn-outline-light" disabled>Detalles</button>
+                <div class="mt-2 small text-muted">Tiempo restante: <span class="time-remaining" data-duration="${r.duration_minutes||0}" data-occupied="${r.occupied_since||''}">--:--:--</span></div>
               </div>
             `).join('');
           }
@@ -228,6 +242,13 @@
                     notifHtml = notifications.map(formatNotification).join('');
                   }
                   notificationsList.innerHTML = activeHtml + notifHtml;
+                  // Señalamos que el render de notificaciones ha terminado
+                  document.dispatchEvent(new Event('notificationsLoaded'));
+                  // Si estamos en modo preservar solo botones, aplicarlo inmediatamente para
+                  // evitar que la recarga posterior muestre el texto de las notificaciones
+                  if (window.preserveNotificationsButtonsOnly) {
+                    keepOnlyButtonsInNotifications();
+                  }
                 }
               }
             })
@@ -236,6 +257,30 @@
         .catch(error => console.error('Error cargando reservas activas:', error));
   }
   window.loadNotifications = loadNotifications;
+
+  // Mantener solo los botones/controles dentro de cada notificación
+  function keepOnlyButtonsInNotifications() {
+    const notificationsList = document.getElementById('notificationsList');
+    if (!notificationsList) return;
+    const items = Array.from(notificationsList.querySelectorAll('.notification-item, .active-reservation'));
+    if (items.length === 0) return;
+    items.forEach(it => {
+      // Buscar botones dentro del item
+      const buttons = Array.from(it.querySelectorAll('button'));
+      if (buttons.length === 0) {
+        // Si no hay botones, eliminamos el item
+        it.remove();
+        return;
+      }
+      // Construir nuevo contenedor con solamente los botones
+      const wrapper = document.createElement('div');
+      wrapper.className = 'notification-controls d-flex gap-2';
+      buttons.forEach(b => wrapper.appendChild(b));
+      // Reemplazar el contenido del item por el wrapper
+      it.innerHTML = '';
+      it.appendChild(wrapper);
+    });
+  }
 
     // Funciones de acción para las notificaciones
     function markAsArrived(reservationId) {
@@ -269,10 +314,11 @@
   }
 
   function cancelReservation(reservationId) {
-    if (confirm('¿Estás seguro de que deseas cancelar la reserva?')) {
-      fetch(`/api/reservations/${reservationId}/cancel`, {
-        method: 'POST'
-      })
+    if (!reservationId) return;
+    if (window.pendingCancels && window.pendingCancels.has(reservationId)) return; // evitar duplicados
+    if (!confirm('¿Estás seguro de que deseas cancelar la reserva?')) return;
+    window.pendingCancels.add(reservationId);
+    fetch(`/api/reservations/${reservationId}/cancel`, { method: 'POST' })
       .then(response => response.json())
       .then(data => {
         if (data.success) {
@@ -282,8 +328,8 @@
           alert('Error al cancelar la reserva: ' + data.error);
         }
       })
-      .catch(() => alert('Error de red al cancelar la reserva'));
-    }
+      .catch(() => alert('Error de red al cancelar la reserva'))
+      .finally(() => { if (window.pendingCancels) window.pendingCancels.delete(reservationId); });
   }
 
     function finishReservation(reservationId) {
@@ -322,6 +368,8 @@
         if (modal) {
             modal.classList.remove('open');
             modal.setAttribute('aria-hidden', 'true');
+        // Desactivar preservación cuando se cierra el modal
+        window.preserveNotificationsButtonsOnly = false;
         }
     }
 
@@ -337,5 +385,60 @@
       closeModalBtn.addEventListener('click', closeNotificationsModal);
     }
   });
+
+  // Actualizar timers dentro del modal (tiempo restante para reservas activas)
+  let _notifTimerInterval = null;
+  function updateNotificationTimers() {
+    const items = document.querySelectorAll('#notificationsList .active-reservation');
+    items.forEach(it => {
+      const span = it.querySelector('.time-remaining');
+      if (!span) return;
+      const duration = parseInt(span.dataset.duration || '0', 10) || 0; // minutes
+      const occupied = span.dataset.occupied || '';
+      if (!occupied) {
+        span.textContent = '--:--:--';
+        return;
+      }
+      const start = Date.parse(occupied);
+      if (isNaN(start)) { span.textContent = '--:--:--'; return; }
+      const elapsedSec = Math.floor((Date.now() - start) / 1000);
+      const remainingSec = Math.max(0, duration * 60 - elapsedSec);
+      const hrs = Math.floor(remainingSec / 3600);
+      const mins = Math.floor((remainingSec % 3600) / 60);
+      const secs = remainingSec % 60;
+      span.textContent = String(hrs).padStart(2,'0')+':'+String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+    });
+  }
+  document.addEventListener('notificationsLoaded', () => {
+    // limpiar interval existente
+    if (_notifTimerInterval) clearInterval(_notifTimerInterval);
+    updateNotificationTimers();
+    _notifTimerInterval = setInterval(updateNotificationTimers, 1000);
+  });
+  // Cuando se cierra el modal, detener el timer
+  document.getElementById('closeModalBtn') && document.getElementById('closeModalBtn').addEventListener('click', () => { if(_notifTimerInterval){ clearInterval(_notifTimerInterval); _notifTimerInterval = null; } });
+
+  function clearNotificationsMailbox() {
+    if (!confirm('¿Eliminar todas las notificaciones no relacionadas con reservas?')) return;
+    fetch('/api/notifications/clear', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+            // Recargar datos y luego limpiar el contenido textual del DOM manteniendo los botones
+            loadNotifications();
+            // Marcar modo de preservación para que futuras recargas no restauren el texto
+            window.preserveNotificationsButtonsOnly = true;
+            // Ejecutar la limpieza cuando la recarga haya terminado (listener único)
+            const onLoaded = () => {
+              keepOnlyButtonsInNotifications();
+              alert('Buzón limpiado. Los módulos interactivos se han preservado.');
+            };
+            document.addEventListener('notificationsLoaded', onLoaded, { once: true });
+        } else {
+          alert('Error borrando notificaciones: ' + (d.error || 'desconocido'));
+        }
+      })
+      .catch(() => alert('Error de red al limpiar el buzón'));
+  }
   </script>
 {% endblock %}

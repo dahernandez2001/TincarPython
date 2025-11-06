@@ -1,6 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
   console.log("Modo conductor cargado correctamente");
 
+  // Guard global para evitar cancelaciones duplicadas
+  window.pendingCancels = window.pendingCancels || new Set();
+
   // Inicializar mapa Leaflet
   const defaultLat = 4.60971; // Bogotá como centro por defecto
   const defaultLng = -74.08175;
@@ -220,7 +223,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       function cancelReservationById(resId){
         if(!resId) return;
+        if (window.pendingCancels && window.pendingCancels.has(resId)) return;
         if(!confirm('¿Deseas cancelar la reserva?')) return;
+        window.pendingCancels.add(resId);
         fetch(`/api/reservations/${resId}/cancel`, { method: 'POST' })
           .then(r => r.json().then(j=>({ok: r.ok, json: j})))
           .then(({ok, json}) => {
@@ -234,7 +239,8 @@ document.addEventListener("DOMContentLoaded", () => {
               alert('No se pudo cancelar la reserva: ' + (json.error||'error'));
             }
           })
-          .catch(err=> alert('Error cancelando reserva: '+err.message));
+          .catch(err=> alert('Error cancelando reserva: '+err.message))
+          .finally(()=>{ if(window.pendingCancels) window.pendingCancels.delete(resId); });
       }
 
       // Por defecto, asignar acción de crear reserva

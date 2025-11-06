@@ -209,6 +209,42 @@
         <div id="notificationsList">
           <!-- Las notificaciones se cargarán aquí dinámicamente -->
         </div>
+        <div class="text-center mt-3">
+          <button id="clearMailboxBtnOwner" class="btn btn-outline-dark" onclick="clearNotificationsMailboxOwner()">Limpiar buzón</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Finalizar servicio (arrendador) -->
+  <div id="finishModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" style="max-width:480px;">
+      <button class="modal-close" id="closeFinishModal">×</button>
+      <div class="modal-header text-center"><span class="badge btn-orange">Finalizar servicio</span></div>
+      <div class="modal-body">
+        <input type="hidden" id="finishReservationId">
+        <div class="mb-2"><strong>Parqueadero:</strong> <span id="finishParkingName"></span></div>
+        <div class="mb-2"><strong>Conductor:</strong> <span id="finishDriverName"></span></div>
+        <div class="mb-2"><strong>Tiempo usado (min):</strong> <span id="finishElapsed">--</span></div>
+        <div class="mb-2"><strong>Monto estimado:</strong> <span id="finishAmount">--</span></div>
+        <hr>
+        <div class="mb-2"><label>Calificación</label>
+          <select id="finishRating" class="form-control" style="width:120px; display:inline-block;">
+            <option value="">--</option>
+            <option value="5">5</option>
+            <option value="4">4</option>
+            <option value="3">3</option>
+            <option value="2">2</option>
+            <option value="1">1</option>
+          </select>
+        </div>
+        <div class="mb-2"><label>Comentario (opcional)</label>
+          <textarea id="finishComment" class="form-control" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-end p-3">
+        <button id="cancelFinishBtn" class="btn btn-outline-light me-2">Cancelar</button>
+        <button id="confirmFinishBtn" class="btn btn-orange">Finalizar y calificar</button>
       </div>
     </div>
   </div>
@@ -223,6 +259,10 @@
 {% block scripts %}
 <script>
 let notifications = [];
+// Evitar reintentos paralelos de cancelación
+window.pendingCancels = window.pendingCancels || new Set();
+// Cuando el usuario limpia el buzón, mantener solo botones hasta cerrar modal
+window.preserveNotificationsButtonsOnly = window.preserveNotificationsButtonsOnly || false;
 function updateNotificationCount() {
   const unreadCount = notifications.filter(n => n.status === 'unread').length;
   const countBadge = document.getElementById('notificationCount');
@@ -240,10 +280,11 @@ function loadNotifications() {
       if (data.success && data.reservations && data.reservations.length > 0) {
         activeHtml = data.reservations.map(r => `
           <div class="notification-item active-reservation">
-            <p>Reserva activa del garaje <strong>${r.parking_name}</strong>.</p>
+            <p>Reserva activa del garaje <strong>${r.parking_name}</strong> por <strong>${r.driver_name || 'un conductor'}</strong>.</p>
             <hr>
-            <button class="btn btn-orange" onclick="finishReservation(${r.id})">Finalizar</button>
+            <button class="btn btn-orange me-2" onclick="finishReservation(${r.id})">Finalizar</button>
             <button class="btn btn-outline-light" disabled>Detalles</button>
+            <div class="mt-2 small text-muted">Tiempo restante: <span class="time-remaining" data-duration="${r.duration_minutes||0}" data-occupied="${r.occupied_since||''}" data-resid="${r.id}">--:--:--</span></div>
           </div>
         `).join('');
       }
@@ -260,25 +301,38 @@ function loadNotifications() {
               if (notifications.length === 0 && !activeHtml) {
                 notifHtml = '<div class="text-center text-muted py-4">Buzón vacío</div>';
               } else {
-                notifHtml = notifications.map(notification => {
+                // Usar el mismo formato que en la vista conductor para consistencia
+                function formatNotification(notification) {
                   let extra = {};
                   try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
                   let html = '';
                   if (notification.type === 'new_reservation') {
                     html += `<p>Tu garaje, <strong>${extra.parking_name || ''}</strong> fue reservado por <strong>${extra.driver_name || ''}</strong> y llegará en <strong>${notification.eta || ''} minutos</strong>.</p>`;
-                    html += `<hr><button class=\"btn btn-orange\" onclick=\"showDriverInfo(${extra.driver_id || 0})\">Conductor</button><button class=\"btn btn-outline-light\" onclick=\"cancelReservation(${notification.reservation_id})\">Cancelar reserva</button>`;
+                    html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
                   } else if (notification.type === 'driver_arrived') {
-                    html += `<p>El conductor no llegó en su tiempo estimado.</p>`;
-                    html += `<hr><button class=\"btn btn-orange\" onclick=\"showDriverInfo(${extra.driver_id || 0})\">Conductor</button><button class=\"btn btn-outline-light\" onclick=\"cancelReservation(${notification.reservation_id})\">Cancelar reserva</button>`;
+                    // Usar el mensaje enviado por el servidor si está disponible; si no, mostrar texto por defecto
+                    html += `<p>${notification.message || 'El conductor no llegó al garaje en el tiempo estimulado.'}</p>`;
+                    html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
+                  } else if (notification.type === 'reservation_expired') {
+                    // Notificación creada por el worker cuando el tiempo activo se acaba
+                    html += `<p>${notification.message || 'El conductor no llegó al garaje en el tiempo estimulado.'}</p>`;
+                    html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
                   } else if (notification.type === 'active_reservation') {
                     html += `<p>Tienes una reserva activa en <strong>${extra.parking_name || ''}</strong>. Debes llegar en <strong>${notification.eta || ''} minutos</strong>.</p>`;
                   } else {
                     html += `<p>${notification.message}</p>`;
                   }
-                  return html;
-                }).join('');
+                  return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+                }
+                notifHtml = notifications.map(formatNotification).join('');
               }
               notificationsList.innerHTML = activeHtml + notifHtml;
+              // Señalamos que el render de notificaciones ha terminado
+              document.dispatchEvent(new Event('notificationsLoaded'));
+              // Si estamos en modo preservar solo botones, aplicarlo inmediatamente
+              if (window.preserveNotificationsButtonsOnly) {
+                keepOnlyButtonsInNotifications();
+              }
             }
           }
         })
@@ -302,22 +356,128 @@ function closeNotificationsModal() {
   if (modal) {
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
+    // Desactivar preservación cuando se cierra el modal
+    window.preserveNotificationsButtonsOnly = false;
   }
 }
-function finishReservation(reservationId) {
-  if (confirm('¿Estás seguro de que deseas finalizar la reserva?')) {
-    fetch(`/api/reservations/${reservationId}/finish`, { method: 'POST' })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
+// Mantener solo los botones/controles dentro de cada notificación (propietario)
+function keepOnlyButtonsInNotifications() {
+  const notificationsList = document.getElementById('notificationsList');
+  if (!notificationsList) return;
+  const items = Array.from(notificationsList.querySelectorAll('.notification-item, .active-reservation'));
+  if (items.length === 0) return;
+  items.forEach(it => {
+    const buttons = Array.from(it.querySelectorAll('button'));
+    if (buttons.length === 0) {
+      it.remove();
+      return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'notification-controls d-flex gap-2';
+    buttons.forEach(b => wrapper.appendChild(b));
+    it.innerHTML = '';
+    it.appendChild(wrapper);
+  });
+}
+
+function clearNotificationsMailboxOwner() {
+  if (!confirm('¿Eliminar todas las notificaciones no relacionadas con reservas?')) return;
+  fetch('/api/notifications/clear', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        // Marcar modo de preservación para que futuras recargas no restauren el texto
+        window.preserveNotificationsButtonsOnly = true;
+        // Actualizar datos en background y luego preservar solo los botones en el DOM
         loadNotifications();
+        document.addEventListener('notificationsLoaded', function onLoaded(){
+          keepOnlyButtonsInNotifications();
+          alert('Buzón limpiado. Los módulos interactivos se han preservado.');
+        }, { once: true });
       } else {
-        alert('Error al finalizar la reserva: ' + data.error);
+        alert('Error borrando notificaciones: ' + (d.error || 'desconocido'));
       }
     })
-    .catch(error => console.error('Error:', error));
-  }
+    .catch(() => alert('Error de red al limpiar el buzón'));
 }
+function finishReservation(reservationId) {
+  // Abrir modal de finalización en lugar de finalizar directamente
+  openFinishModal(reservationId);
+}
+
+// Modal: abrir con datos calculados (mismo rate que el backend: 100/unidad por minuto)
+function openFinishModal(reservationId){
+  // buscar información de la reserva en la lista actual
+  const span = document.querySelector(`#notificationsList .active-reservation [data-resid='${reservationId}']`);
+  let parkingName = '';
+  let driverName = '';
+  let occupied = '';
+  let duration = 0;
+  if(span){
+    const parent = span.closest('.active-reservation');
+    parkingName = parent.querySelector('strong') ? parent.querySelector('strong').textContent : '';
+    // intentar leer atributos
+    occupied = span.dataset.occupied || '';
+    duration = parseInt(span.dataset.duration || '0', 10) || 0;
+    // intentar leer driver name desde el bloque
+    const p = parent.querySelector('.mt-2') || parent.querySelector('p');
+    if(p){
+      const txt = p.textContent || '';
+      // heurística: 'por <driver>'
+      const m = txt.match(/por\s+(.*)\./);
+      if(m) driverName = m[1];
+    }
+  }
+  // calcular elapsed
+  let elapsed_min = duration;
+  if(occupied){
+    const start = Date.parse(occupied);
+    if(!isNaN(start)){
+      const secs = Math.floor((Date.now() - start)/1000);
+      elapsed_min = Math.max(0, Math.ceil(secs/60));
+    }
+  }
+  const rate = 100;
+  const amount = elapsed_min * rate;
+
+  // rellenar modal
+  document.getElementById('finishReservationId').value = reservationId;
+  document.getElementById('finishParkingName').textContent = parkingName || '';
+  document.getElementById('finishDriverName').textContent = driverName || '';
+  document.getElementById('finishElapsed').textContent = elapsed_min;
+  document.getElementById('finishAmount').textContent = amount;
+  document.getElementById('finishRating').value = '';
+  document.getElementById('finishComment').value = '';
+
+  const modal = document.getElementById('finishModal');
+  modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+}
+
+// Modal event handlers
+document.addEventListener('DOMContentLoaded', ()=>{
+  const closeBtn = document.getElementById('closeFinishModal');
+  const cancelBtn = document.getElementById('cancelFinishBtn');
+  const confirmBtn = document.getElementById('confirmFinishBtn');
+  const modal = document.getElementById('finishModal');
+  if(closeBtn) closeBtn.addEventListener('click', ()=>{ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); });
+  if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); });
+  if(confirmBtn) confirmBtn.addEventListener('click', async ()=>{
+    const id = document.getElementById('finishReservationId').value;
+    const rating = document.getElementById('finishRating').value;
+    const comment = document.getElementById('finishComment').value;
+    try{
+      const res = await fetch(`/api/reservations/${id}/finish`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rating: rating? parseInt(rating): null, comment: comment || null }) });
+      const j = await res.json();
+      if(res.ok && j.success){
+        modal.classList.remove('open'); modal.setAttribute('aria-hidden','true');
+        loadNotifications();
+        alert('Reserva finalizada correctamente');
+      } else {
+        alert('Error finalizando: '+(j.error||'error'));
+      }
+    }catch(err){ alert('Error de red: '+err.message); }
+  });
+});
 function showDriverInfo(driverId) {
   // Aquí puedes mostrar un modal con la información del conductor
   fetch(`/api/users/profile?user_id=${driverId}`)
@@ -332,19 +492,22 @@ function showDriverInfo(driverId) {
     .catch(() => alert('Error de red al consultar el conductor'));
 }
 function cancelReservation(reservationId) {
-  if (confirm('¿Estás seguro de que deseas cancelar la reserva?')) {
-    fetch(`/api/reservations/${reservationId}/cancel`, { method: 'POST' })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        alert('Reserva cancelada correctamente');
-        loadNotifications();
-      } else {
-        alert('Error al cancelar la reserva: ' + data.error);
-      }
-    })
-    .catch(error => alert('Error de red al cancelar la reserva'));
-  }
+  if (!reservationId) return;
+  if (window.pendingCancels && window.pendingCancels.has(reservationId)) return;
+  if (!confirm('¿Estás seguro de que deseas cancelar la reserva?')) return;
+  window.pendingCancels.add(reservationId);
+  fetch(`/api/reservations/${reservationId}/cancel`, { method: 'POST' })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      alert('Reserva cancelada correctamente');
+      loadNotifications();
+    } else {
+      alert('Error al cancelar la reserva: ' + data.error);
+    }
+  })
+  .catch(error => alert('Error de red al cancelar la reserva'))
+  .finally(()=>{ if(window.pendingCancels) window.pendingCancels.delete(reservationId); });
 }
 document.addEventListener('DOMContentLoaded', () => {
   loadNotifications();
@@ -358,6 +521,35 @@ document.addEventListener('DOMContentLoaded', () => {
     closeModalBtn.addEventListener('click', closeNotificationsModal);
   }
 });
+
+// Timers para actualizar tiempo restante dentro del modal de notificaciones
+let _ownerNotifTimer = null;
+function updateOwnerNotificationTimers(){
+  const items = document.querySelectorAll('#notificationsList .active-reservation');
+  items.forEach(it => {
+    const span = it.querySelector('.time-remaining');
+    if(!span) return;
+    const duration = parseInt(span.dataset.duration || '0', 10) || 0;
+    const occupied = span.dataset.occupied || '';
+    if(!occupied){ span.textContent='--:--:--'; return; }
+    const start = Date.parse(occupied);
+    if(isNaN(start)){ span.textContent='--:--:--'; return; }
+    const elapsed = Math.floor((Date.now() - start)/1000);
+    const remaining = Math.max(0, duration*60 - elapsed);
+    const hrs = Math.floor(remaining/3600);
+    const mins = Math.floor((remaining%3600)/60);
+    const secs = remaining%60;
+    span.textContent = String(hrs).padStart(2,'0')+':'+String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+  });
+}
+document.addEventListener('notificationsLoaded', ()=>{
+  if(_ownerNotifTimer) clearInterval(_ownerNotifTimer);
+  updateOwnerNotificationTimers();
+  _ownerNotifTimer = setInterval(updateOwnerNotificationTimers, 1000);
+});
+// stop when modal closed
+const closeModalBtn = document.getElementById('closeModalBtn');
+if(closeModalBtn) closeModalBtn.addEventListener('click', ()=>{ if(_ownerNotifTimer){ clearInterval(_ownerNotifTimer); _ownerNotifTimer=null; } });
 </script>
 
 <script>
@@ -395,6 +587,21 @@ function startParkingTimers(){
       if(timeSpan) timeSpan.textContent = '00:00:00';
     }
   });
+
+  function clearNotificationsMailboxOwner() {
+    if (!confirm('¿Eliminar todas las notificaciones no relacionadas con reservas?')) return;
+    fetch('/api/notifications/clear', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          loadNotifications();
+          alert('Buzón limpiado.');
+        } else {
+          alert('Error borrando notificaciones: ' + (d.error || 'desconocido'));
+        }
+      })
+      .catch(() => alert('Error de red al limpiar el buzón'));
+  }
 }
 
 // Polling para actualizar lista cada 8s (permite ver cambios tras reservas)
