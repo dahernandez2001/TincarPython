@@ -880,6 +880,253 @@ def api_cancel_reservation(reservation_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/reservations/<int:reservation_id>/request-extra-time', methods=['POST'])
+def request_extra_time(reservation_id):
+    """Conductor solicita tiempo extra al arrendador."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        data = request.get_json() or {}
+        extra_minutes = data.get('extra_minutes', 0)
+        if extra_minutes not in [10, 20, 30]:
+            return jsonify({'success': False, 'error': 'Minutos inválidos'}), 400
+        
+        # Obtener la reserva
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT driver_id, parking_id FROM reservations WHERE id = ?', (reservation_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        driver_id, parking_id = row[0], row[1]
+        if driver_id != session['user_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
+        # Obtener el owner_id del parqueadero
+        cur.execute('SELECT owner_id FROM parkings WHERE id = ?', (parking_id,))
+        parking_row = cur.fetchone()
+        if not parking_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Parqueadero no encontrado'}), 404
+        
+        owner_id = parking_row[0]
+        
+        # Crear notificación para el arrendador
+        add_notification(
+            user_id=owner_id,
+            type='extra_time_request',
+            message=f'El conductor solicita {extra_minutes} minutos adicionales',
+            reservation_id=reservation_id,
+            owner_id=owner_id,
+            extra_data=f'{{"extra_minutes": {extra_minutes}, "driver_id": {driver_id}}}'
+        )
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/at-vehicle', methods=['POST'])
+def at_vehicle(reservation_id):
+    """Conductor notifica que llegó a su vehículo."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT driver_id, parking_id FROM reservations WHERE id = ?', (reservation_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        driver_id, parking_id = row[0], row[1]
+        if driver_id != session['user_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
+        # Obtener el owner_id del parqueadero
+        cur.execute('SELECT owner_id FROM parkings WHERE id = ?', (parking_id,))
+        parking_row = cur.fetchone()
+        if not parking_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Parqueadero no encontrado'}), 404
+        
+        owner_id = parking_row[0]
+        
+        # Crear notificación para el arrendador
+        add_notification(
+            user_id=owner_id,
+            type='at_vehicle',
+            message='El conductor llegó a su vehículo',
+            reservation_id=reservation_id,
+            owner_id=owner_id,
+            extra_data=f'{{"driver_id": {driver_id}}}'
+        )
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/approve-extra-time', methods=['POST'])
+def approve_extra_time(reservation_id):
+    """Arrendador aprueba tiempo extra solicitado por el conductor."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        data = request.get_json() or {}
+        extra_minutes = data.get('extra_minutes', 0)
+        notification_id = data.get('notification_id', 0)
+        
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''SELECT r.driver_id, r.duration_minutes, p.owner_id 
+                       FROM reservations r 
+                       JOIN parkings p ON r.parking_id = p.id 
+                       WHERE r.id = ?''', (reservation_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        driver_id, current_duration, owner_id = row
+        if owner_id != session['user_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
+        # Actualizar duración de la reserva
+        new_duration = current_duration + extra_minutes
+        cur.execute('UPDATE reservations SET duration_minutes = ? WHERE id = ?', (new_duration, reservation_id))
+        
+        # Marcar notificación de solicitud como leída
+        if notification_id:
+            cur.execute('UPDATE notifications SET status = ? WHERE id = ?', ('read', notification_id))
+        
+        # Notificar al conductor que fue aprobado
+        add_notification(
+            user_id=driver_id,
+            type='extra_time_approved',
+            message=f'Se aprobaron {extra_minutes} minutos adicionales',
+            reservation_id=reservation_id,
+            extra_data={'extra_minutes': extra_minutes}
+        )
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/reject-extra-time', methods=['POST'])
+def reject_extra_time(reservation_id):
+    """Arrendador rechaza tiempo extra - se aplica multa de $500 cada 5 min."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        data = request.get_json() or {}
+        notification_id = data.get('notification_id', 0)
+        
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''SELECT r.driver_id, p.owner_id 
+                       FROM reservations r 
+                       JOIN parkings p ON r.parking_id = p.id 
+                       WHERE r.id = ?''', (reservation_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        driver_id, owner_id = row
+        if owner_id != session['user_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
+        # Marcar que se rechazó - penalty_active=1 indica que cuando se cumpla duration_minutes
+        # se debe empezar a cobrar la multa. penalty_start se calculará dinámicamente.
+        cur.execute('UPDATE reservations SET penalty_active = 1 WHERE id = ?', (reservation_id,))
+        
+        # Marcar notificación de solicitud como leída
+        if notification_id:
+            cur.execute('UPDATE notifications SET status = ? WHERE id = ?', ('read', notification_id))
+        
+        # Notificar al conductor que fue rechazado
+        add_notification(
+            user_id=driver_id,
+            type='extra_time_rejected',
+            message='Tu solicitud de tiempo extra fue rechazada. Se aplicará multa de $500 cada 5 min al exceder tu tiempo.',
+            reservation_id=reservation_id
+        )
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/vehicle-not-arrived', methods=['POST'])
+def vehicle_not_arrived(reservation_id):
+    """Arrendador indica que el conductor no ha llegado - el tiempo sigue corriendo."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT owner_id FROM reservations WHERE id = ?', (reservation_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        if row[0] != session['user_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
+        # Marcar notificación de at_vehicle como leída
+        cur.execute('UPDATE notifications SET status = ? WHERE reservation_id = ? AND type = ?', 
+                    ('read', reservation_id, 'at_vehicle'))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>', methods=['GET'])
+def get_reservation_details(reservation_id):
+    """API para obtener los detalles de una reserva incluyendo penalizaciones."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+        
+    try:
+        reservation = get_reservation(reservation_id)
+        if not reservation:
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        # Verificar que el usuario sea el conductor o el dueño del parqueadero
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT owner_id, occupied_since FROM parkings WHERE id = ?', (reservation['parking_id'],))
+        parking = cursor.fetchone()
+        conn.close()
+
+        if not (reservation['driver_id'] == session['user_id'] or (parking and parking[0] == session['user_id'])):
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
+        # Agregar occupied_since a la respuesta
+        if parking and len(parking) > 1:
+            reservation['occupied_since'] = parking[1]
+        
+        return jsonify({
+            'success': True,
+            'reservation': reservation,
+            'penalty_amount': reservation.get('penalty_amount', 0) or 0,
+            'penalty_active': reservation.get('penalty_active', 0) or 0
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/notifications')
 def get_notifications():

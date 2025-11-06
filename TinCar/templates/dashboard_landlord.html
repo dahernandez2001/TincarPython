@@ -226,7 +226,9 @@
         <div class="mb-2"><strong>Parqueadero:</strong> <span id="finishParkingName"></span></div>
         <div class="mb-2"><strong>Conductor:</strong> <span id="finishDriverName"></span></div>
         <div class="mb-2"><strong>Tiempo usado (min):</strong> <span id="finishElapsed">--</span></div>
-        <div class="mb-2"><strong>Monto estimado:</strong> <span id="finishAmount">--</span></div>
+        <div class="mb-2"><strong>Subtotal:</strong> <span id="finishSubtotal">--</span></div>
+        <div class="mb-2" id="finishPenaltyRow" style="display:none;"><strong>Penalización:</strong> <span id="finishPenalty" class="text-danger">--</span></div>
+        <div class="mb-2"><strong>Monto total:</strong> <span id="finishAmount">--</span></div>
         <hr>
         <div class="mb-2"><label>Calificación</label>
           <select id="finishRating" class="form-control" style="width:120px; display:inline-block;">
@@ -272,73 +274,66 @@ function updateNotificationCount() {
   }
 }
 function loadNotifications() {
-  // Primero cargar reservas activas
-  fetch('/api/reservations/active/owner')
+  // Solo cargar notificaciones (no mostrar reservas activas aquí)
+  fetch('/api/notifications')
     .then(response => response.json())
     .then(data => {
-      let activeHtml = '';
-      if (data.success && data.reservations && data.reservations.length > 0) {
-        activeHtml = data.reservations.map(r => `
-          <div class="notification-item active-reservation">
-            <p>Reserva activa del garaje <strong>${r.parking_name}</strong> por <strong>${r.driver_name || 'un conductor'}</strong>.</p>
-            <hr>
-            <button class="btn btn-orange me-2" onclick="finishReservation(${r.id})">Finalizar</button>
-            <button class="btn btn-outline-light" disabled>Detalles</button>
-            <div class="mt-2 small text-muted">Tiempo restante: <span class="time-remaining" data-duration="${r.duration_minutes||0}" data-occupied="${r.occupied_since||''}" data-resid="${r.id}">--:--:--</span></div>
-          </div>
-        `).join('');
-      }
-      // Luego cargar notificaciones normales
-      fetch('/api/notifications')
-        .then(response => response.json())
-        .then(data2 => {
-          if (data2.success) {
-            notifications = data2.notifications;
-            updateNotificationCount();
-            const notificationsList = document.getElementById('notificationsList');
-            if (notificationsList) {
-              let notifHtml = '';
-              if (notifications.length === 0 && !activeHtml) {
-                notifHtml = '<div class="text-center text-muted py-4">Buzón vacío</div>';
+      if (data.success) {
+        notifications = data.notifications;
+        updateNotificationCount();
+        const notificationsList = document.getElementById('notificationsList');
+        if (notificationsList) {
+          let notifHtml = '';
+          if (notifications.length === 0) {
+            notifHtml = '<div class="text-center text-muted py-4">Buzón vacío</div>';
+          } else {
+            // Usar el mismo formato que en la vista conductor para consistencia
+            function formatNotification(notification) {
+              let extra = {};
+              try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
+              let html = '';
+              const resId = notification.reservation_id || extra.reservation_id || 0;
+              
+              if (notification.type === 'new_reservation') {
+                html += `<p>Tu garaje, <strong>${extra.parking_name || ''}</strong> fue reservado por <strong>${extra.driver_name || ''}</strong> y llegará en <strong>${notification.eta || ''} minutos</strong>.</p>`;
+                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${resId})">Cancelar reserva</button>`;
+              } else if (notification.type === 'driver_arrived') {
+                // Conductor llegó al garaje
+                const dur = extra.duration_minutes || notification.duration_minutes || 0;
+                const occ = extra.occupied_since || notification.occupied_since || '';
+                html += `<p>${notification.message} Volverá en: <span class="time-remaining" data-duration="${dur}" data-occupied="${occ}">--:--:--</span></p>`;
+                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button>`;
+              } else if (notification.type === 'at_vehicle') {
+                // Conductor llegó a su vehículo
+                html += `<p>El conductor llegó a su vehículo.</p>`;
+                html += `<hr><button class="btn btn-success me-2" onclick="confirmVehicleArrival(${resId})">Confirmar</button><button class="btn btn-outline-light" onclick="vehicleNotArrived(${resId})">No ha llegado</button>`;
+              } else if (notification.type === 'extra_time_request') {
+                // Solicitud de tiempo extra del conductor
+                const extraMin = extra.extra_minutes || 0;
+                html += `<p>El conductor quiere agregar <strong>${extraMin} minutos</strong> de reserva.</p>`;
+                html += `<hr><button class="btn btn-danger me-2" onclick="rejectExtraTime(${resId}, ${notification.id})">Cancelar</button><button class="btn btn-success" onclick="approveExtraTime(${resId}, ${extraMin}, ${notification.id})">Aceptar</button>`;
+              } else if (notification.type === 'reservation_expired') {
+                // ETA expirado - conductor no llegó a tiempo
+                html += `<p>El conductor no llegó al garaje en el tiempo estimulado.</p>`;
+                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${resId})">Cancelar reserva</button>`;
               } else {
-                // Usar el mismo formato que en la vista conductor para consistencia
-                function formatNotification(notification) {
-                  let extra = {};
-                  try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
-                  let html = '';
-                  if (notification.type === 'new_reservation') {
-                    html += `<p>Tu garaje, <strong>${extra.parking_name || ''}</strong> fue reservado por <strong>${extra.driver_name || ''}</strong> y llegará en <strong>${notification.eta || ''} minutos</strong>.</p>`;
-                    html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
-                  } else if (notification.type === 'driver_arrived') {
-                    // Usar el mensaje enviado por el servidor si está disponible; si no, mostrar texto por defecto
-                    html += `<p>${notification.message || 'El conductor no llegó al garaje en el tiempo estimulado.'}</p>`;
-                    html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
-                  } else if (notification.type === 'reservation_expired') {
-                    // Notificación creada por el worker cuando el tiempo activo se acaba
-                    html += `<p>${notification.message || 'El conductor no llegó al garaje en el tiempo estimulado.'}</p>`;
-                    html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
-                  } else if (notification.type === 'active_reservation') {
-                    html += `<p>Tienes una reserva activa en <strong>${extra.parking_name || ''}</strong>. Debes llegar en <strong>${notification.eta || ''} minutos</strong>.</p>`;
-                  } else {
-                    html += `<p>${notification.message}</p>`;
-                  }
-                  return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
-                }
-                notifHtml = notifications.map(formatNotification).join('');
+                html += `<p>${notification.message}</p>`;
               }
-              notificationsList.innerHTML = activeHtml + notifHtml;
-              // Señalamos que el render de notificaciones ha terminado
-              document.dispatchEvent(new Event('notificationsLoaded'));
-              // Si estamos en modo preservar solo botones, aplicarlo inmediatamente
-              if (window.preserveNotificationsButtonsOnly) {
-                keepOnlyButtonsInNotifications();
-              }
+              return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
             }
+            notifHtml = notifications.map(formatNotification).join('');
           }
-        })
-        .catch(error => console.error('Error cargando notificaciones:', error));
+          notificationsList.innerHTML = notifHtml;
+          // Señalamos que el render de notificaciones ha terminado
+          document.dispatchEvent(new Event('notificationsLoaded'));
+          // Si estamos en modo preservar solo botones, aplicarlo inmediatamente
+          if (window.preserveNotificationsButtonsOnly) {
+            keepOnlyButtonsInNotifications();
+          }
+        }
+      }
     })
-    .catch(error => console.error('Error cargando reservas activas:', error));
+    .catch(error => console.error('Error cargando notificaciones:', error));
 }
 function openNotificationsModal() {
   const modal = document.getElementById('notificationsModal');
@@ -407,50 +402,88 @@ function finishReservation(reservationId) {
 
 // Modal: abrir con datos calculados (mismo rate que el backend: 100/unidad por minuto)
 function openFinishModal(reservationId){
-  // buscar información de la reserva en la lista actual
-  const span = document.querySelector(`#notificationsList .active-reservation [data-resid='${reservationId}']`);
-  let parkingName = '';
-  let driverName = '';
-  let occupied = '';
-  let duration = 0;
-  if(span){
-    const parent = span.closest('.active-reservation');
-    parkingName = parent.querySelector('strong') ? parent.querySelector('strong').textContent : '';
-    // intentar leer atributos
-    occupied = span.dataset.occupied || '';
-    duration = parseInt(span.dataset.duration || '0', 10) || 0;
-    // intentar leer driver name desde el bloque
-    const p = parent.querySelector('.mt-2') || parent.querySelector('p');
-    if(p){
-      const txt = p.textContent || '';
-      // heurística: 'por <driver>'
-      const m = txt.match(/por\s+(.*)\./);
-      if(m) driverName = m[1];
-    }
-  }
-  // calcular elapsed
-  let elapsed_min = duration;
-  if(occupied){
-    const start = Date.parse(occupied);
-    if(!isNaN(start)){
-      const secs = Math.floor((Date.now() - start)/1000);
-      elapsed_min = Math.max(0, Math.ceil(secs/60));
-    }
-  }
-  const rate = 100;
-  const amount = elapsed_min * rate;
+  // Obtener TODOS los datos desde el backend
+  fetch(`/api/reservations/${reservationId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success || !data.reservation) {
+        alert('Error obteniendo datos de la reserva');
+        return;
+      }
+      
+      const reservation = data.reservation;
+      const penalty = data.penalty_amount || 0;
+      
+      // Obtener información del parqueadero
+      fetch(`/api/parkings/${reservation.parking_id}`)
+        .then(r => r.json())
+        .then(parkingData => {
+          const parkingName = parkingData.name || 'Parqueadero';
+          
+          // Obtener nombre del conductor desde las notificaciones
+          let driverName = 'Conductor';
+          const notifs = notifications.filter(n => n.reservation_id === reservationId && n.type === 'driver_arrived');
+          if (notifs.length > 0 && notifs[0].extra_data) {
+            try {
+              const extra = JSON.parse(notifs[0].extra_data);
+              driverName = extra.driver_name || 'Conductor';
+            } catch(e) {
+              console.error('Error parsing extra_data:', e);
+            }
+          }
+          
+          // Calcular tiempo transcurrido desde occupied_since
+          let elapsed_min = reservation.duration_minutes || 0;
+          const occupied = reservation.occupied_since;
+          if (occupied) {
+            try {
+              const start = Date.parse(occupied);
+              if (!isNaN(start)) {
+                const secs = Math.floor((Date.now() - start) / 1000);
+                elapsed_min = Math.max(0, Math.ceil(secs / 60));
+              }
+            } catch(e) {
+              console.error('Error parsing occupied_since:', e);
+            }
+          }
+          
+          const rate = 100;
+          const subtotal = elapsed_min * rate;
+          const total = subtotal + penalty;
 
-  // rellenar modal
-  document.getElementById('finishReservationId').value = reservationId;
-  document.getElementById('finishParkingName').textContent = parkingName || '';
-  document.getElementById('finishDriverName').textContent = driverName || '';
-  document.getElementById('finishElapsed').textContent = elapsed_min;
-  document.getElementById('finishAmount').textContent = amount;
-  document.getElementById('finishRating').value = '';
-  document.getElementById('finishComment').value = '';
+          // Rellenar modal
+          document.getElementById('finishReservationId').value = reservationId;
+          document.getElementById('finishParkingName').textContent = parkingName;
+          document.getElementById('finishDriverName').textContent = driverName;
+          document.getElementById('finishElapsed').textContent = elapsed_min;
+          document.getElementById('finishSubtotal').textContent = subtotal;
+          document.getElementById('finishAmount').textContent = total;
+          
+          // Mostrar fila de penalización si existe
+          const penaltyRow = document.getElementById('finishPenaltyRow');
+          if (penalty > 0) {
+            document.getElementById('finishPenalty').textContent = penalty;
+            penaltyRow.style.display = 'block';
+          } else {
+            penaltyRow.style.display = 'none';
+          }
+          
+          document.getElementById('finishRating').value = '';
+          document.getElementById('finishComment').value = '';
 
-  const modal = document.getElementById('finishModal');
-  modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+          const modal = document.getElementById('finishModal');
+          modal.classList.add('open');
+          modal.setAttribute('aria-hidden', 'false');
+        })
+        .catch(err => {
+          console.error('Error obteniendo datos del parqueadero:', err);
+          alert('Error al cargar los datos del parqueadero');
+        });
+    })
+    .catch(err => {
+      console.error('Error obteniendo detalles de reserva:', err);
+      alert('Error al cargar los datos de la reserva');
+    });
 }
 
 // Modal event handlers
@@ -509,6 +542,79 @@ function cancelReservation(reservationId) {
   .catch(error => alert('Error de red al cancelar la reserva'))
   .finally(()=>{ if(window.pendingCancels) window.pendingCancels.delete(reservationId); });
 }
+
+// Aprobar tiempo extra solicitado por el conductor
+function approveExtraTime(reservationId, extraMinutes, notificationId) {
+  if (!confirm(`¿Aprobar ${extraMinutes} minutos adicionales?`)) return;
+  
+  fetch(`/api/reservations/${reservationId}/approve-extra-time`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extra_minutes: extraMinutes, notification_id: notificationId })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      alert('Tiempo extra aprobado.');
+      loadNotifications();
+    } else {
+      alert('Error: ' + (data.error || 'No se pudo aprobar'));
+    }
+  })
+  .catch(() => alert('Error de red al aprobar tiempo extra'));
+}
+
+// Rechazar tiempo extra - aplica multa de $500 cada 5 min
+function rejectExtraTime(reservationId, notificationId) {
+  if (!confirm('¿Rechazar la solicitud? Se aplicará multa de $500 cada 5 min al conductor.')) return;
+  
+  fetch(`/api/reservations/${reservationId}/reject-extra-time`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notification_id: notificationId })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      alert('Solicitud rechazada. Se aplicará multa al conductor.');
+      loadNotifications();
+    } else {
+      alert('Error: ' + (data.error || 'No se pudo rechazar'));
+    }
+  })
+  .catch(() => alert('Error de red al rechazar tiempo extra'));
+}
+
+// Confirmar que el conductor llegó a su vehículo - abre modal de finalización
+function confirmVehicleArrival(reservationId) {
+  // Cerrar modal de notificaciones
+  const notifModal = document.getElementById('notificationsModal');
+  if (notifModal) {
+    notifModal.classList.remove('open');
+    notifModal.setAttribute('aria-hidden', 'true');
+  }
+  // Abrir modal de finalización
+  openFinishModal(reservationId);
+}
+
+// Conductor no ha llegado - continúa el tiempo sin multa
+function vehicleNotArrived(reservationId) {
+  if (!confirm('¿El conductor no ha llegado a su vehículo? El tiempo seguirá corriendo.')) return;
+  
+  fetch(`/api/reservations/${reservationId}/vehicle-not-arrived`, {
+    method: 'POST'
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      alert('Notificación actualizada. El tiempo sigue corriendo.');
+      loadNotifications();
+    } else {
+      alert('Error: ' + (data.error || 'No se pudo actualizar'));
+    }
+  })
+  .catch(() => alert('Error de red'));
+}
 document.addEventListener('DOMContentLoaded', () => {
   loadNotifications();
   setInterval(loadNotifications, 10000);
@@ -525,10 +631,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // Timers para actualizar tiempo restante dentro del modal de notificaciones
 let _ownerNotifTimer = null;
 function updateOwnerNotificationTimers(){
-  const items = document.querySelectorAll('#notificationsList .active-reservation');
-  items.forEach(it => {
-    const span = it.querySelector('.time-remaining');
-    if(!span) return;
+  // Actualizar todos los spans .time-remaining (tanto en reservas activas como en notificaciones)
+  const spans = document.querySelectorAll('#notificationsList .time-remaining');
+  spans.forEach(span => {
     const duration = parseInt(span.dataset.duration || '0', 10) || 0;
     const occupied = span.dataset.occupied || '';
     if(!occupied){ span.textContent='--:--:--'; return; }

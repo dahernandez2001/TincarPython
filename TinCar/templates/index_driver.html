@@ -20,7 +20,7 @@
 
 <main class="container py-5 text-light">
   <!-- Notificaciones -->
-  <div id="notificationIcon" class="position-fixed" style="top: 20px; right: 20px; cursor: pointer;">
+  <div id="notificationIcon" class="position-fixed" style="top: 20px; right: 20px; cursor: pointer;" onclick="openNotificationsModal()">
     <img src="{{ url_for('static', filename='img/cono.png') }}" alt="Notificaciones" style="width: 40px; height: 40px;">
     <span id="notificationCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
   </div>
@@ -170,6 +170,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="{{ url_for('static', filename='js/driver.js') }}"></script>
 
+  {% raw %}
   <script>
   // Funciones para el manejo de notificaciones
   let notifications = [];
@@ -191,38 +192,53 @@
     let extra = {};
     try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
     let html = '';
-    if (notification.type === 'active_reservation') {
-      html += `<p>Reservaste un garaje, recuerda llegar antes de <strong>${notification.eta || ''} minutos</strong>.</p>`;
-      // Mostrar sólo el texto para la notificación de reserva (sin botones en el buzón)
-      if (notification.type === 'active_reservation') {
-        html += `<p>Reservaste un garaje, recuerda llegar antes de <strong>${notification.eta || ''} minutos</strong>.</p>`;
-        html += `<hr>`;
-      } else if (notification.type === 'arrived_confirmation') {
-        // Usar el mensaje enviado por el servidor (por ejemplo: "Has llegado...")
-        html += `<p>${notification.message || 'Has llegado al parqueadero.'}</p>`;
-        html += `<hr>`;
-        // Controles adicionales (ver garaje / cancelar)
-        html += `<button class="btn btn-orange me-2" onclick="showGarageInfo(${notification.parking_id || 0})">Garaje</button>`;
-        html += `<button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
-      } else {
-        html += `<p>${notification.message}</p>`;
-      }
+    
+    if (notification.type === 'vehicle_parked') {
+      // Vehículo guardado - mostrar tiempo restante de reserva
+      const dur = extra.duration_minutes || notification.duration_minutes || 0;
+      const occ = extra.occupied_since || notification.occupied_since || '';
+      const resId = notification.reservation_id || extra.reservation_id || 0;
+      html += `<p>Tu vehículo está guardado, te queda <span class="time-remaining" data-duration="${dur}" data-occupied="${occ}">--:--:--</span></p>`;
+      html += `<hr>`;
+      html += `<button class="btn btn-warning me-2" onclick="requestExtraTime(${resId})">Más tiempo</button>`;
+      html += `<button class="btn btn-success" onclick="notifyAtVehicle(${resId})">Estoy en mi vehículo</button>`;
       return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
-      }
-      // Primero cargar reservas activas
-      fetch('/api/reservations/active/driver')
+    } else if (notification.type === 'eta_expired') {
+      // No llegó a tiempo (ETA expirado)
+      html += `<p>No has llegado al parqueadero.</p>`;
+      html += `<hr>`;
+      html += `<button class="btn btn-orange me-2" onclick="showGarageInfo(${notification.parking_id || 0})">Garaje</button>`;
+      html += `<button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
+      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } else if (notification.type === 'extra_time_approved') {
+      // Solicitud de tiempo extra aprobada
+      html += `<p class="text-success">✓ El arrendador aprobó ${extra.extra_minutes || 0} minutos adicionales.</p>`;
+      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } else if (notification.type === 'extra_time_rejected') {
+      // Solicitud de tiempo extra rechazada
+      html += `<p class="text-danger">✗ El arrendador rechazó tu solicitud de tiempo extra. Se aplicará multa de $500 cada 5 min.</p>`;
+      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } else {
+      html += `<p>${notification.message}</p>`;
+      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    }
+  }
+
+  // Función para cargar reservas activas y notificaciones
+  function loadNotifications() {
+  // Primero cargar reservas activas (solo las pendientes con botón de Llegué)
+  fetch('/api/reservations/active/driver')
         .then(response => response.json())
         .then(data => {
           let activeHtml = '';
           if (data.success && data.reservations && data.reservations.length > 0) {
-            activeHtml = data.reservations.map(r => `
+            // Solo mostrar reservas pendientes (antes de marcar "Llegué")
+            const pendingReservations = data.reservations.filter(r => r.status === 'pending');
+            activeHtml = pendingReservations.map(r => `
               <div class="notification-item active-reservation">
-                <p>Reserva activa del garaje <strong>${r.parking_name}</strong>.</p>
+                <p>Reserva activa del garaje <strong>${r.parking_name}</strong>. Recuerda llegar antes de <span class="time-remaining" data-duration="${r.eta_minutes||0}" data-occupied="${r.created_at||''}" data-iseta="true">--:--:--</span></p>
                 <hr>
-                ${r.status === 'pending' ? `<button class="btn btn-success me-2" onclick="markAsArrived(${r.id})">Llegué</button>` : ''}
-                <button class="btn btn-orange me-2" onclick="finishReservation(${r.id})">Finalizar</button>
-                <button class="btn btn-outline-light" disabled>Detalles</button>
-                <div class="mt-2 small text-muted">Tiempo restante: <span class="time-remaining" data-duration="${r.duration_minutes||0}" data-occupied="${r.occupied_since||''}">--:--:--</span></div>
+                <button class="btn btn-success me-2" onclick="markAsArrived(${r.id})">Llegué</button>
               </div>
             `).join('');
           }
@@ -349,9 +365,55 @@
         }
     }
 
+    // Solicitar tiempo extra al arrendador
+    function requestExtraTime(reservationId) {
+        const minutes = prompt('¿Cuántos minutos adicionales necesitas?\n\n10 - 10 minutos\n20 - 20 minutos\n30 - 30 minutos\n\nIngresa el número:', '10');
+        if (!minutes || !['10','20','30'].includes(minutes)) {
+            if (minutes !== null) alert('Por favor selecciona 10, 20 o 30 minutos.');
+            return;
+        }
+        if (!confirm(`¿Solicitar ${minutes} minutos adicionales al arrendador?`)) return;
+        
+        fetch(`/api/reservations/${reservationId}/request-extra-time`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ extra_minutes: parseInt(minutes) })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Solicitud enviada al arrendador. Espera su respuesta.');
+                loadNotifications();
+            } else {
+                alert('Error: ' + (data.error || 'No se pudo enviar la solicitud'));
+            }
+        })
+        .catch(() => alert('Error de red al solicitar tiempo extra'));
+    }
+
+    // Notificar que llegó al vehículo
+    function notifyAtVehicle(reservationId) {
+        if (!confirm('¿Confirmas que ya estás en tu vehículo?')) return;
+        
+        fetch(`/api/reservations/${reservationId}/at-vehicle`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Se notificó al arrendador que estás en tu vehículo.');
+                loadNotifications();
+            } else {
+                alert('Error: ' + (data.error || 'No se pudo notificar'));
+            }
+        })
+        .catch(() => alert('Error de red al notificar llegada'));
+    }
+
     // Funciones del modal
     function openNotificationsModal() {
         const modal = document.getElementById('notificationsModal');
+      console.log('openNotificationsModal called, modal:', modal);
         if (modal) {
             modal.classList.add('open');
             modal.setAttribute('aria-hidden', 'false');
@@ -374,6 +436,7 @@
     }
 
   document.addEventListener('DOMContentLoaded', () => {
+    console.log('Driver DOMContentLoaded - attaching notification handlers');
     loadNotifications();
     setInterval(loadNotifications, 10000);
     const notificationIcon = document.getElementById('notificationIcon');
@@ -389,12 +452,13 @@
   // Actualizar timers dentro del modal (tiempo restante para reservas activas)
   let _notifTimerInterval = null;
   function updateNotificationTimers() {
-    const items = document.querySelectorAll('#notificationsList .active-reservation');
-    items.forEach(it => {
-      const span = it.querySelector('.time-remaining');
-      if (!span) return;
+    // Actualizar todos los spans .time-remaining dentro del listado de notificaciones
+    const spans = document.querySelectorAll('#notificationsList .time-remaining');
+    spans.forEach(span => {
       const duration = parseInt(span.dataset.duration || '0', 10) || 0; // minutes
       const occupied = span.dataset.occupied || '';
+      const isEta = span.dataset.iseta === 'true'; // Si es true, cuenta desde created_at (ETA)
+      
       if (!occupied) {
         span.textContent = '--:--:--';
         return;
@@ -407,6 +471,11 @@
       const mins = Math.floor((remainingSec % 3600) / 60);
       const secs = remainingSec % 60;
       span.textContent = String(hrs).padStart(2,'0')+':'+String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+      
+      // Si el tiempo se acabó, recargar notificaciones para mostrar "No has llegado"
+      if (remainingSec === 0 && isEta) {
+        setTimeout(() => loadNotifications(), 1000);
+      }
     });
   }
   document.addEventListener('notificationsLoaded', () => {
@@ -441,4 +510,5 @@
       .catch(() => alert('Error de red al limpiar el buzón'));
   }
   </script>
+  {% endraw %}
 {% endblock %}
