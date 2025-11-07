@@ -581,3 +581,134 @@ header nav a:hover { color: #FFB300 }
               0 0 25px rgba(255, 179, 0, 0.5);
   transform: scale(1.1);
 }
+
+/* Menú lateral de cuenta */
+.account-side-menu {
+  position: fixed;
+  top: 0;
+  right: -350px;
+  width: 350px;
+  height: 100%;
+  background: #2C2C2C;
+  border-left: 2px solid #FFB300;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  transition: right 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+  z-index: 10000;
+  overflow-y: auto;
+}
+
+.account-side-menu.active {
+  right: 0;
+}
+
+.account-menu-header {
+  background: #1A1919;
+  padding: 20px;
+  border-bottom: 2px solid #FFB300;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.account-menu-header h3 {
+  color: #FFB300;
+  margin: 0;
+  font-weight: 600;
+}
+
+.close-account-menu {
+  background: transparent;
+  border: none;
+  color: #FFB300;
+  font-size: 32px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  transition: all 0.3s ease;
+}
+
+.close-account-menu:hover {
+  color: #E88E2E;
+  transform: rotate(90deg);
+}
+
+.account-menu-body {
+  padding: 30px 20px;
+}
+
+.account-info {
+  text-align: center;
+}
+
+.profile-circle-large {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FFB300, #E88E2E);
+  border: 3px solid #FFB300;
+}
+
+.account-info h4 {
+  color: #FFB300;
+  font-weight: 600;
+}
+
+.account-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255, 179, 0, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 179, 0, 0.3);
+}
+
+.stat-label {
+  color: #FFEFCA;
+  font-size: 14px;
+}
+
+.stat-value {
+  color: #FFB300;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.account-actions {
+  margin-top: 20px;
+}
+
+/* Overlay del menú */
+.account-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(26, 25, 25, 0.7);
+  backdrop-filter: blur(5px);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.4s ease;
+  z-index: 9999;
+}
+
+.account-menu-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Ajuste del cono cuando el menú está activo */
+.notification-cone-fixed.menu-active {
+  right: 380px;
+  z-index: 10001;
+}
+

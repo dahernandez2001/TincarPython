@@ -168,6 +168,28 @@ def driver_index():
     return render_template('index_driver.html', nombre=nombre)
 
 
+@app.route('/driver/profile')
+def driver_profile():
+    """Página de perfil completo del conductor"""
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+    
+    from models import get_driver_profile, check_license_validity, get_driver_age
+    
+    user_id = session['user_id']
+    profile = get_driver_profile(user_id)
+    
+    if not profile:
+        flash('No se pudo cargar el perfil', 'error')
+        return redirect(url_for('driver_index'))
+    
+    # Agregar datos calculados
+    profile['age'] = get_driver_age(user_id)
+    profile['license_validity'] = check_license_validity(user_id)
+    
+    return render_template('driver_profile_new.html', profile=profile)
+
+
 @app.route('/parkings/create', methods=['POST'])
 def create_parking():
     if 'user_id' not in session:
@@ -1427,6 +1449,280 @@ def api_owner_parkings():
 
 
 if __name__ == '__main__':
+    # ============================================================
+    # APIS REST PARA PERFIL DEL CONDUCTOR
+    # ============================================================
+    
+    from models import (
+        get_driver_profile,
+        update_driver_profile,
+        update_driver_verification_status,
+        update_driver_stats,
+        update_last_activity,
+        check_license_validity,
+        get_driver_age
+    )
+    
+    @app.route('/api/driver/profile/<int:user_id>', methods=['GET'])
+    def api_get_driver_profile(user_id):
+        """Obtener perfil completo del conductor"""
+        try:
+            # Verificar que el usuario tiene permiso para ver este perfil
+            if 'user_id' not in session or (session['user_id'] != user_id and session.get('role') != 'admin'):
+                return jsonify({'error': 'No autorizado'}), 403
+            
+            profile = get_driver_profile(user_id)
+            if profile:
+                # Agregar información adicional calculada
+                profile['age'] = get_driver_age(user_id)
+                profile['license_validity'] = check_license_validity(user_id)
+                return jsonify(profile), 200
+            else:
+                return jsonify({'error': 'Perfil no encontrado'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/profile/<int:user_id>', methods=['PUT'])
+    def api_update_driver_profile(user_id):
+        """Actualizar perfil del conductor"""
+        try:
+            # Verificar que el usuario tiene permiso
+            if 'user_id' not in session or session['user_id'] != user_id:
+                return jsonify({'error': 'No autorizado'}), 403
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No se recibieron datos'}), 400
+            
+            success = update_driver_profile(user_id, data)
+            if success:
+                update_last_activity(user_id)
+                return jsonify({'message': 'Perfil actualizado correctamente'}), 200
+            else:
+                return jsonify({'error': 'Error al actualizar perfil'}), 500
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/profile/<int:user_id>/verify', methods=['POST'])
+    def api_verify_driver_documents(user_id):
+        """Verificar documentos del conductor (solo admin)"""
+        try:
+            # Solo administradores pueden verificar
+            if 'user_id' not in session or session.get('role') != 'admin':
+                return jsonify({'error': 'No autorizado - Solo administradores'}), 403
+            
+            data = request.get_json()
+            document_verified = data.get('document_verified')
+            license_verified = data.get('license_verified')
+            
+            success = update_driver_verification_status(
+                user_id,
+                document_verified=document_verified,
+                license_verified=license_verified
+            )
+            
+            if success:
+                # Crear notificación para el conductor
+                if document_verified == 'verificado' or license_verified == 'verificado':
+                    add_notification(
+                        user_id,
+                        'verification_approved',
+                        'Tus documentos han sido verificados correctamente'
+                    )
+                elif document_verified == 'rechazado' or license_verified == 'rechazado':
+                    add_notification(
+                        user_id,
+                        'verification_rejected',
+                        'Algunos documentos fueron rechazados. Por favor revisa tu perfil.'
+                    )
+                
+                return jsonify({'message': 'Estado de verificación actualizado'}), 200
+            else:
+                return jsonify({'error': 'Error al actualizar verificación'}), 500
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/stats', methods=['GET'])
+    def api_get_driver_stats():
+        """Obtener estadísticas del conductor actual"""
+        try:
+            if 'user_id' not in session:
+                return jsonify({'error': 'No autenticado'}), 401
+            
+            user_id = session['user_id']
+            profile = get_driver_profile(user_id)
+            
+            if profile:
+                stats = {
+                    'rating': profile['rating'],
+                    'total_reservations': profile['total_reservations'],
+                    'total_cancellations': profile['total_cancellations'],
+                    'account_status': profile['account_status'],
+                    'document_verified': profile['document_verified'],
+                    'license_verified': profile['license_verified']
+                }
+                return jsonify(stats), 200
+            else:
+                return jsonify({'error': 'Perfil no encontrado'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/upload-photo', methods=['POST'])
+    def api_upload_driver_photo():
+        """Subir foto de perfil, documento o licencia"""
+        try:
+            if 'user_id' not in session:
+                return jsonify({'error': 'No autenticado'}), 401
+            
+            if 'photo' not in request.files:
+                return jsonify({'error': 'No se envió ninguna foto'}), 400
+            
+            file = request.files['photo']
+            photo_type = request.form.get('type')  # 'profile', 'document', 'license'
+            
+            if file.filename == '':
+                return jsonify({'error': 'Nombre de archivo vacío'}), 400
+            
+            if not photo_type or photo_type not in ['profile', 'document', 'license']:
+                return jsonify({'error': 'Tipo de foto inválido'}), 400
+            
+            # Validar extensión
+            allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+            if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+                return jsonify({'error': 'Formato de archivo no permitido'}), 400
+            
+            # Crear carpeta de uploads si no existe
+            upload_folder = os.path.join(app.static_folder, 'uploads', 'profiles')
+            os.makedirs(upload_folder, exist_ok=True)
+            
+            # Generar nombre único para el archivo
+            user_id = session['user_id']
+            timestamp = int(_time.time())
+            filename = secure_filename(f"{user_id}_{photo_type}_{timestamp}_{file.filename}")
+            filepath = os.path.join(upload_folder, filename)
+            
+            # Guardar archivo
+            file.save(filepath)
+            
+            # Actualizar base de datos con la ruta relativa
+            relative_path = f"/static/uploads/profiles/{filename}"
+            field_map = {
+                'profile': 'profile_photo',
+                'document': 'document_photo',
+                'license': 'license_photo'
+            }
+            
+            update_data = {field_map[photo_type]: relative_path}
+            success = update_driver_profile(user_id, update_data)
+            
+            if success:
+                update_last_activity(user_id)
+                return jsonify({
+                    'message': 'Foto subida correctamente',
+                    'path': relative_path
+                }), 200
+            else:
+                # Eliminar archivo si falló la actualización en BD
+                os.remove(filepath)
+                return jsonify({'error': 'Error al actualizar base de datos'}), 500
+                
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/license-validity/<int:user_id>', methods=['GET'])
+    def api_check_license_validity(user_id):
+        """Verificar validez de la licencia"""
+        try:
+            if 'user_id' not in session or (session['user_id'] != user_id and session.get('role') != 'admin'):
+                return jsonify({'error': 'No autorizado'}), 403
+            
+            validity = check_license_validity(user_id)
+            return jsonify(validity), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/vehicles', methods=['GET'])
+    def api_get_driver_vehicles():
+        """Obtener lista de vehículos del conductor"""
+        try:
+            if 'user_id' not in session:
+                return jsonify({'error': 'No autorizado'}), 403
+            
+            user_id = session['user_id']
+            
+            # Por ahora, obtener el vehículo del perfil (posteriormente será una lista)
+            profile = get_driver_profile(user_id)
+            
+            if not profile:
+                return jsonify({'error': 'Perfil no encontrado'}), 404
+            
+            vehicles = []
+            
+            # Si tiene vehículo registrado en el perfil
+            if profile.get('vehicle_plate'):
+                vehicles.append({
+                    'plate': profile.get('vehicle_plate'),
+                    'brand': profile.get('vehicle_brand'),
+                    'model': profile.get('vehicle_model'),
+                    'color': profile.get('vehicle_color'),
+                    'year': profile.get('vehicle_year'),
+                    'dimensions': profile.get('vehicle_dimensions')
+                })
+            
+            # Obtener vehículo actualmente seleccionado
+            current_vehicle = None
+            current_plate = session.get('current_vehicle_plate')
+            
+            if current_plate:
+                current_vehicle = next((v for v in vehicles if v['plate'] == current_plate), None)
+            elif vehicles:
+                # Si no hay vehículo seleccionado, usar el primero por defecto
+                current_vehicle = vehicles[0]
+                session['current_vehicle_plate'] = current_vehicle['plate']
+            
+            return jsonify({
+                'vehicles': vehicles,
+                'current_vehicle': current_vehicle
+            }), 200
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/driver/select-vehicle', methods=['POST'])
+    def api_select_vehicle():
+        """Seleccionar vehículo activo"""
+        try:
+            if 'user_id' not in session:
+                return jsonify({'error': 'No autorizado'}), 403
+            
+            data = request.get_json()
+            plate = data.get('plate')
+            
+            if not plate:
+                return jsonify({'error': 'Placa requerida'}), 400
+            
+            # Verificar que el vehículo pertenece al usuario
+            user_id = session['user_id']
+            profile = get_driver_profile(user_id)
+            
+            if not profile or profile.get('vehicle_plate') != plate:
+                return jsonify({'error': 'Vehículo no encontrado'}), 404
+            
+            # Guardar en sesión
+            session['current_vehicle_plate'] = plate
+            
+            return jsonify({
+                'success': True,
+                'message': f'Vehículo {plate} seleccionado'
+            }), 200
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    # ============================================================
+    # FIN APIS REST PERFIL CONDUCTOR
+    # ============================================================
+
     # Crear tablas necesarias al iniciar
     from models import create_notifications_table
     create_users_table()

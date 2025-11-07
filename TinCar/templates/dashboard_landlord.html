@@ -12,12 +12,46 @@
       <div class="nav">
         <a href="#" class="nav-link">Inicio</a>
         <a href="#" class="nav-link">Reservar</a>
-        <a href="#" class="nav-link">Configuración</a>
+        <a href="#" class="nav-link" id="openAccountMenu" style="cursor: pointer;">Cuenta</a>
         <div class="nav-bubble"></div>
       </div>
     </div>
   </div>
 </nav>
+
+<!-- Menú lateral de cuenta -->
+<aside id="accountSideMenu" class="account-side-menu">
+  <div class="account-menu-header">
+    <h3>Mi Cuenta</h3>
+    <button id="closeAccountMenu" class="close-account-menu">×</button>
+  </div>
+  <div class="account-menu-body">
+    <div class="account-info">
+      <div class="profile-circle-large mx-auto mb-3"></div>
+      <h4 class="text-center mb-3">{{ nombre }}</h4>
+      <p class="text-center text-secondary mb-4">{{ session.get('email') or 'email@ejemplo.com' }}</p>
+    </div>
+    <hr class="my-3" style="border-color: #FFB300;">
+    <div class="account-stats">
+      <div class="stat-item">
+        <span class="stat-label">Parqueaderos activos</span>
+        <span class="stat-value text-warning"><span id="menu-parkings">0</span></span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Reservas totales</span>
+        <span class="stat-value"><span id="menu-reservations">0</span></span>
+      </div>
+    </div>
+    <hr class="my-3" style="border-color: #FFB300;">
+    <div class="account-actions">
+      <a href="{{ url_for('home') }}" class="btn btn-orange w-100 mb-3">Modo conductor</a>
+      <a href="{{ url_for('logout') }}" class="btn btn-outline-light w-100">Cerrar sesión</a>
+    </div>
+  </div>
+</aside>
+
+<!-- Overlay para el menú -->
+<div id="accountMenuOverlay" class="account-menu-overlay"></div>
 
 <!-- Cono de notificaciones flotante -->
 <div id="notificationIcon" class="notification-cone-fixed">
@@ -263,6 +297,31 @@
 
 {% block scripts %}
 <script>
+// Control del menú lateral de cuenta
+document.addEventListener('DOMContentLoaded', () => {
+  const openBtn = document.getElementById('openAccountMenu');
+  const closeBtn = document.getElementById('closeAccountMenu');
+  const sideMenu = document.getElementById('accountSideMenu');
+  const overlay = document.getElementById('accountMenuOverlay');
+  const notificationCone = document.getElementById('notificationIcon');
+
+  function openAccountMenu() {
+    sideMenu.classList.add('active');
+    overlay.classList.add('active');
+    notificationCone.classList.add('menu-active');
+  }
+
+  function closeAccountMenu() {
+    sideMenu.classList.remove('active');
+    overlay.classList.remove('active');
+    notificationCone.classList.remove('menu-active');
+  }
+
+  if (openBtn) openBtn.addEventListener('click', openAccountMenu);
+  if (closeBtn) closeBtn.addEventListener('click', closeAccountMenu);
+  if (overlay) overlay.addEventListener('click', closeAccountMenu);
+});
+
 // Animación de burbuja en navegación
 document.addEventListener('DOMContentLoaded', () => {
   const nav = document.querySelector('.nav');

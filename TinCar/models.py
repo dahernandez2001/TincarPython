@@ -46,6 +46,52 @@ def create_users_table():
         )
     ''')
     conn.commit()
+    
+    # Verificar y agregar nuevas columnas si no existen
+    cursor.execute("PRAGMA table_info(users)")
+    cols = [r[1] for r in cursor.fetchall()]
+    
+    # Agregar columnas del perfil del conductor si no existen
+    new_columns = [
+        ('document_type', 'TEXT'),  # Cédula/Pasaporte/Cédula extranjera
+        ('document_number', 'TEXT'),
+        ('emergency_phone', 'TEXT'),
+        ('emergency_contact_name', 'TEXT'),
+        ('emergency_contact_relationship', 'TEXT'),
+        ('birth_date', 'TEXT'),  # YYYY-MM-DD
+        ('address', 'TEXT'),
+        ('profile_photo', 'TEXT'),  # Ruta a la foto de perfil
+        ('document_photo', 'TEXT'),  # Ruta a la foto del documento
+        ('license_number', 'TEXT'),
+        ('license_expiry_date', 'TEXT'),  # YYYY-MM-DD
+        ('license_category', 'TEXT'),  # A1, A2, B1, B2, C1, etc.
+        ('license_photo', 'TEXT'),  # Ruta a la foto de la licencia
+        ('gender', 'TEXT'),  # Masculino/Femenino/Otro/Prefiero no decir
+        ('vehicle_plate', 'TEXT'),
+        ('vehicle_brand', 'TEXT'),
+        ('vehicle_model', 'TEXT'),
+        ('vehicle_color', 'TEXT'),
+        ('vehicle_year', 'INTEGER'),
+        ('document_verified', 'TEXT DEFAULT "pendiente"'),  # pendiente/verificado/rechazado
+        ('license_verified', 'TEXT DEFAULT "pendiente"'),  # pendiente/verificado/rechazado
+        ('rating', 'REAL DEFAULT 0.0'),  # Calificación promedio
+        ('total_reservations', 'INTEGER DEFAULT 0'),  # Total de reservaciones completadas
+        ('total_cancellations', 'INTEGER DEFAULT 0'),  # Número de cancelaciones
+        ('account_status', 'TEXT DEFAULT "activo"'),  # activo/suspendido/bloqueado
+        ('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('last_activity', 'TIMESTAMP')
+    ]
+    
+    for col_name, col_type in new_columns:
+        if col_name not in cols:
+            try:
+                cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}')
+                print(f"[models] Columna '{col_name}' agregada a la tabla users")
+            except Exception as e:
+                print(f"[models] Error agregando columna '{col_name}': {e}")
+    
+    conn.commit()
     conn.close()
 
 
@@ -1065,3 +1111,280 @@ def notify_expired_reservations():
         pass
     finally:
         conn.close()
+
+
+# ============================================================
+# FUNCIONES PARA PERFIL DEL CONDUCTOR
+# ============================================================
+
+def get_driver_profile(user_id):
+    """
+    Obtiene el perfil completo del conductor.
+    
+    Args:
+        user_id (int): ID del usuario
+        
+    Returns:
+        dict: Diccionario con todos los datos del perfil del conductor
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 
+            id, name, email, phone, 
+            document_type, document_number, emergency_phone,
+            emergency_contact_name, emergency_contact_relationship,
+            birth_date, address, profile_photo, document_photo,
+            license_number, license_expiry_date, license_category, license_photo,
+            gender, vehicle_plate, vehicle_brand, vehicle_model, 
+            vehicle_color, vehicle_year,
+            document_verified, license_verified,
+            rating, total_reservations, total_cancellations,
+            account_status, last_activity
+        FROM users
+        WHERE id = ?
+    ''', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return dict(row)
+    return None
+
+
+def update_driver_profile(user_id, profile_data):
+    """
+    Actualiza el perfil del conductor.
+    
+    Args:
+        user_id (int): ID del usuario
+        profile_data (dict): Diccionario con los datos a actualizar
+        
+    Returns:
+        bool: True si la actualización fue exitosa, False en caso contrario
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Campos permitidos para actualizar
+    allowed_fields = [
+        'name', 'phone', 'document_type', 'document_number',
+        'emergency_phone', 'emergency_contact_name', 'emergency_contact_relationship',
+        'birth_date', 'address', 'profile_photo', 'document_photo',
+        'license_number', 'license_expiry_date', 'license_category', 'license_photo',
+        'gender', 'vehicle_plate', 'vehicle_brand', 'vehicle_model',
+        'vehicle_color', 'vehicle_year'
+    ]
+    
+    # Construir la consulta dinámicamente
+    update_fields = []
+    values = []
+    
+    for field, value in profile_data.items():
+        if field in allowed_fields:
+            update_fields.append(f'{field} = ?')
+            values.append(value)
+    
+    if not update_fields:
+        conn.close()
+        return False
+    
+    values.append(user_id)
+    
+    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+    
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        return success
+    except Exception as e:
+        print(f"[models] Error actualizando perfil del conductor: {e}")
+        conn.close()
+        return False
+
+
+def update_driver_verification_status(user_id, document_verified=None, license_verified=None):
+    """
+    Actualiza el estado de verificación de documentos y/o licencia.
+    
+    Args:
+        user_id (int): ID del usuario
+        document_verified (str): Estado de verificación del documento (pendiente/verificado/rechazado)
+        license_verified (str): Estado de verificación de la licencia (pendiente/verificado/rechazado)
+        
+    Returns:
+        bool: True si la actualización fue exitosa
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    updates = []
+    values = []
+    
+    if document_verified:
+        updates.append('document_verified = ?')
+        values.append(document_verified)
+    
+    if license_verified:
+        updates.append('license_verified = ?')
+        values.append(license_verified)
+    
+    if not updates:
+        conn.close()
+        return False
+    
+    values.append(user_id)
+    
+    query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+    
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        return success
+    except Exception as e:
+        print(f"[models] Error actualizando verificación: {e}")
+        conn.close()
+        return False
+
+
+def update_driver_stats(user_id, rating=None, increment_reservations=False, increment_cancellations=False):
+    """
+    Actualiza las estadísticas del conductor.
+    
+    Args:
+        user_id (int): ID del usuario
+        rating (float): Nueva calificación promedio
+        increment_reservations (bool): Si True, incrementa el contador de reservaciones
+        increment_cancellations (bool): Si True, incrementa el contador de cancelaciones
+        
+    Returns:
+        bool: True si la actualización fue exitosa
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    updates = []
+    values = []
+    
+    if rating is not None:
+        updates.append('rating = ?')
+        values.append(rating)
+    
+    if increment_reservations:
+        updates.append('total_reservations = total_reservations + 1')
+    
+    if increment_cancellations:
+        updates.append('total_cancellations = total_cancellations + 1')
+    
+    if not updates:
+        conn.close()
+        return False
+    
+    values.append(user_id)
+    
+    query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+    
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        return success
+    except Exception as e:
+        print(f"[models] Error actualizando estadísticas: {e}")
+        conn.close()
+        return False
+
+
+def update_last_activity(user_id):
+    """
+    Actualiza la última actividad del usuario.
+    
+    Args:
+        user_id (int): ID del usuario
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE users 
+            SET last_activity = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        ''', (user_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"[models] Error actualizando última actividad: {e}")
+    finally:
+        conn.close()
+
+
+def check_license_validity(user_id):
+    """
+    Verifica si la licencia del conductor está vigente.
+    
+    Args:
+        user_id (int): ID del usuario
+        
+    Returns:
+        dict: {'valid': bool, 'days_until_expiry': int, 'expiry_date': str}
+    """
+    from datetime import datetime, timedelta
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT license_expiry_date FROM users WHERE id = ?', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row or not row['license_expiry_date']:
+        return {'valid': False, 'days_until_expiry': None, 'expiry_date': None}
+    
+    try:
+        expiry_date = datetime.strptime(row['license_expiry_date'], '%Y-%m-%d')
+        today = datetime.now()
+        days_until_expiry = (expiry_date - today).days
+        
+        return {
+            'valid': days_until_expiry >= 0,
+            'days_until_expiry': days_until_expiry,
+            'expiry_date': row['license_expiry_date']
+        }
+    except Exception as e:
+        print(f"[models] Error verificando validez de licencia: {e}")
+        return {'valid': False, 'days_until_expiry': None, 'expiry_date': None}
+
+
+def get_driver_age(user_id):
+    """
+    Calcula la edad del conductor basado en su fecha de nacimiento.
+    
+    Args:
+        user_id (int): ID del usuario
+        
+    Returns:
+        int: Edad del conductor, o None si no tiene fecha de nacimiento
+    """
+    from datetime import datetime
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT birth_date FROM users WHERE id = ?', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row or not row['birth_date']:
+        return None
+    
+    try:
+        birth_date = datetime.strptime(row['birth_date'], '%Y-%m-%d')
+        today = datetime.now()
+        age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+        return age
+    except Exception as e:
+        print(f"[models] Error calculando edad: {e}")
+        return None
+

@@ -1,0 +1,759 @@
+{% extends "layout.html" %}
+{% block title %}Mi Perfil - TinCar{% endblock %}
+
+{% block content %}
+<style>
+    .profile-container {
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 20px;
+    }
+    
+    .profile-header {
+        background: linear-gradient(135deg, #FFB300 0%, #E88E2E 100%);
+        color: #1A1919;
+        padding: 30px;
+        border-radius: 15px 15px 0 0;
+        text-align: center;
+    }
+    
+    .profile-photo-container {
+        position: relative;
+        width: 150px;
+        height: 150px;
+        margin: 0 auto 20px;
+    }
+    
+    .profile-photo {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 5px solid #fff;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    .photo-upload-btn {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        width: 40px;
+        height: 40px;
+        background: #2C2C2C;
+        color: #FFB300;
+        border: 2px solid #FFB300;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+    }
+    
+    .btn-group {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+    
+    .edit-btn {
+        background: #2C2C2C;
+        color: #FFB300;
+        padding: 15px 50px;
+        border: 2px solid #FFB300;
+        border-radius: 8px;
+        font-size: 1.1em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .edit-btn:hover {
+        background: #FFB300;
+        color: #1A1919;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 179, 0, 0.4);
+    }
+    
+    .vehicle-item {
+        background: #f9f9f9;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        border: 2px solid #e0e0e0;
+        position: relative;
+    }
+    
+    .vehicle-item h4 {
+        color: #FFB300;
+        margin-bottom: 15px;
+    }
+    
+    .remove-vehicle-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: #F44336;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+    
+    .add-vehicle-btn {
+        background: #FFB300;
+        color: #1A1919;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-bottom: 20px;
+    }
+    
+    .add-vehicle-btn:hover {
+        background: #E88E2E;
+        transform: translateY(-2px);
+    }
+    
+    .pdf-upload-section {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f5f5f5;
+        border-radius: 8px;
+    }
+    
+    .pdf-file-name {
+        display: inline-block;
+        margin-left: 10px;
+        color: #4CAF50;
+        font-weight: 600;
+    }
+    
+    .photo-upload-btn:hover {
+        background: #FFB300;
+        color: #2C2C2C;
+        transform: scale(1.1);
+    }
+    
+    .profile-stats {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        margin-top: 20px;
+    }
+    
+    .stat-item {
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 2em;
+        font-weight: bold;
+        color: #1A1919;
+    }
+    
+    .stat-label {
+        font-size: 0.9em;
+        color: #2C2C2C;
+        margin-top: 5px;
+    }
+    
+    .profile-body {
+        background: #fff;
+        padding: 30px;
+        border-radius: 0 0 15px 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .section-title {
+        color: #FFB300;
+        font-size: 1.5em;
+        margin: 30px 0 20px 0;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #FFB300;
+    }
+    
+    .section-title:first-child {
+        margin-top: 0;
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-label {
+        font-weight: 600;
+        color: #2C2C2C;
+        margin-bottom: 8px;
+        display: block;
+    }
+    
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 1em;
+        transition: all 0.3s;
+    }
+    
+    .form-control:focus {
+        border-color: #FFB300;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(255, 179, 0, 0.1);
+    }
+    
+    .form-control:disabled {
+        background: #f5f5f5;
+        cursor: not-allowed;
+    }
+    
+    .row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    .verification-badge {
+        display: inline-block;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        font-weight: 600;
+        margin-left: 10px;
+    }
+    
+    .badge-verified {
+        background: #4CAF50;
+        color: white;
+    }
+    
+    .badge-pending {
+        background: #FF9800;
+        color: white;
+    }
+    
+    .badge-rejected {
+        background: #F44336;
+        color: white;
+    }
+    
+    .document-upload {
+        margin-top: 15px;
+        padding: 20px;
+        background: #f9f9f9;
+        border: 2px dashed #FFB300;
+        border-radius: 8px;
+        text-align: center;
+    }
+    
+    .upload-btn {
+        background: #FFB300;
+        color: #1A1919;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin: 5px;
+    }
+    
+    .upload-btn:hover {
+        background: #E88E2E;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(255, 179, 0, 0.3);
+    }
+    
+    .save-btn {
+        background: #FFB300;
+        color: #1A1919;
+        padding: 15px 50px;
+        border: none;
+        border-radius: 8px;
+        font-size: 1.1em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-top: 30px;
+    }
+    
+    .save-btn:hover {
+        background: #E88E2E;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 179, 0, 0.4);
+    }
+    
+    .alert {
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-weight: 500;
+    }
+    
+    .alert-warning {
+        background: #fff3cd;
+        color: #856404;
+        border-left: 4px solid #ffc107;
+    }
+    
+    .alert-danger {
+        background: #f8d7da;
+        color: #721c24;
+        border-left: 4px solid #f44336;
+    }
+    
+    .alert-success {
+        background: #d4edda;
+        color: #155724;
+        border-left: 4px solid #4CAF50;
+    }
+    
+    .license-warning {
+        background: #fff3cd;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        border-left: 4px solid #ffc107;
+    }
+    
+    .back-btn {
+        background: #2C2C2C;
+        color: #fff;
+        padding: 10px 25px;
+        border: none;
+        border-radius: 8px;
+        text-decoration: none;
+        display: inline-block;
+        margin-bottom: 20px;
+        transition: all 0.3s;
+    }
+    
+    .back-btn:hover {
+        background: #1A1919;
+        color: #FFB300;
+        transform: translateX(-5px);
+    }
+    
+    .preview-image {
+        max-width: 200px;
+        max-height: 200px;
+        margin-top: 10px;
+        border-radius: 8px;
+        border: 2px solid #FFB300;
+    }
+</style>
+
+<div class="profile-container">
+    <a href="{{ url_for('driver_index') }}" class="back-btn">← Volver al Inicio</a>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <div class="profile-header">
+        <div class="profile-photo-container">
+            <img 
+                src="{{ profile.profile_photo or '/static/img/default-avatar.svg' }}" 
+                alt="Foto de perfil" 
+                class="profile-photo"
+                id="profilePhotoPreview"
+            >
+            <label for="profilePhotoInput" class="photo-upload-btn" title="Cambiar foto">
+                <i class="fas fa-camera"></i>
+            </label>
+            <input type="file" id="profilePhotoInput" accept="image/*" style="display: none;">
+        </div>
+        
+        <h1>{{ profile.name }}</h1>
+        <p>{{ profile.email }}</p>
+        
+        <div class="profile-stats">
+            <div class="stat-item">
+                <div class="stat-value">⭐ {{ "%.1f"|format(profile.rating) }}</div>
+                <div class="stat-label">Calificación</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{ profile.total_reservations }}</div>
+                <div class="stat-label">Reservaciones</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{ profile.age or 'N/A' }}</div>
+                <div class="stat-label">Edad</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="profile-body">
+        <form id="profileForm">
+            <!-- INFORMACIÓN PERSONAL -->
+            <h2 class="section-title">
+                📋 Información Personal
+                {% if profile.document_verified == 'verificado' %}
+                    <span class="verification-badge badge-verified">✓ Verificado</span>
+                {% elif profile.document_verified == 'rechazado' %}
+                    <span class="verification-badge badge-rejected">✗ Rechazado</span>
+                {% else %}
+                    <span class="verification-badge badge-pending">⏳ Pendiente</span>
+                {% endif %}
+            </h2>
+            
+            {% if profile.document_verified == 'rechazado' %}
+                <div class="alert alert-danger">
+                    ⚠️ Tu documento fue rechazado. Por favor verifica la información y vuelve a cargar las imágenes.
+                </div>
+            {% elif profile.document_verified == 'pendiente' %}
+                <div class="alert alert-warning">
+                    ⏳ Tu documento está pendiente de verificación. Esto puede tardar hasta 24 horas.
+                </div>
+            {% endif %}
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Nombre Completo *</label>
+                    <input type="text" class="form-control" name="name" value="{{ profile.name }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Correo Electrónico *</label>
+                    <input type="email" class="form-control" value="{{ profile.email }}" disabled>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Tipo de Documento *</label>
+                    <select class="form-control" name="document_type" required>
+                        <option value="">Seleccione...</option>
+                        <option value="Cédula de ciudadanía" {{ 'selected' if profile.document_type == 'Cédula de ciudadanía' }}>Cédula de ciudadanía</option>
+                        <option value="Cédula extranjera" {{ 'selected' if profile.document_type == 'Cédula extranjera' }}>Cédula extranjera</option>
+                        <option value="Pasaporte" {{ 'selected' if profile.document_type == 'Pasaporte' }}>Pasaporte</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Número de Documento *</label>
+                    <input type="text" class="form-control" name="document_number" value="{{ profile.document_number or '' }}" required>
+                </div>
+            </div>
+            
+            <div class="document-upload">
+                <p><strong>📸 Foto del Documento</strong></p>
+                {% if profile.document_photo %}
+                    <img src="{{ profile.document_photo }}" class="preview-image" id="documentPhotoPreview">
+                {% endif %}
+                <br>
+                <input type="file" id="documentPhotoInput" accept="image/*" style="display: none;">
+                <button type="button" class="upload-btn" onclick="document.getElementById('documentPhotoInput').click()">
+                    Cargar Foto del Documento
+                </button>
+            </div>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Fecha de Nacimiento *</label>
+                    <input type="date" class="form-control" name="birth_date" value="{{ profile.birth_date or '' }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Género</label>
+                    <select class="form-control" name="gender">
+                        <option value="">Prefiero no decir</option>
+                        <option value="Masculino" {{ 'selected' if profile.gender == 'Masculino' }}>Masculino</option>
+                        <option value="Femenino" {{ 'selected' if profile.gender == 'Femenino' }}>Femenino</option>
+                        <option value="Otro" {{ 'selected' if profile.gender == 'Otro' }}>Otro</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Teléfono Principal *</label>
+                    <input type="tel" class="form-control" name="phone" value="{{ profile.phone or '' }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Dirección Completa *</label>
+                    <input type="text" class="form-control" name="address" value="{{ profile.address or '' }}" required>
+                </div>
+            </div>
+            
+            <!-- CONTACTO DE EMERGENCIA -->
+            <h2 class="section-title">🚨 Contacto de Emergencia</h2>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Nombre del Contacto *</label>
+                    <input type="text" class="form-control" name="emergency_contact_name" value="{{ profile.emergency_contact_name or '' }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Relación *</label>
+                    <select class="form-control" name="emergency_contact_relationship" required>
+                        <option value="">Seleccione...</option>
+                        <option value="Padre" {{ 'selected' if profile.emergency_contact_relationship == 'Padre' }}>Padre</option>
+                        <option value="Madre" {{ 'selected' if profile.emergency_contact_relationship == 'Madre' }}>Madre</option>
+                        <option value="Hermano/a" {{ 'selected' if profile.emergency_contact_relationship == 'Hermano/a' }}>Hermano/a</option>
+                        <option value="Cónyuge" {{ 'selected' if profile.emergency_contact_relationship == 'Cónyuge' }}>Cónyuge</option>
+                        <option value="Hijo/a" {{ 'selected' if profile.emergency_contact_relationship == 'Hijo/a' }}>Hijo/a</option>
+                        <option value="Amigo/a" {{ 'selected' if profile.emergency_contact_relationship == 'Amigo/a' }}>Amigo/a</option>
+                        <option value="Otro" {{ 'selected' if profile.emergency_contact_relationship == 'Otro' }}>Otro</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Teléfono de Emergencia *</label>
+                <input type="tel" class="form-control" name="emergency_phone" value="{{ profile.emergency_phone or '' }}" required>
+            </div>
+            
+            <!-- LICENCIA DE CONDUCCIÓN -->
+            <h2 class="section-title">
+                🪪 Licencia de Conducción
+                {% if profile.license_verified == 'verificado' %}
+                    <span class="verification-badge badge-verified">✓ Verificada</span>
+                {% elif profile.license_verified == 'rechazado' %}
+                    <span class="verification-badge badge-rejected">✗ Rechazada</span>
+                {% else %}
+                    <span class="verification-badge badge-pending">⏳ Pendiente</span>
+                {% endif %}
+            </h2>
+            
+            {% if profile.license_verified == 'rechazado' %}
+                <div class="alert alert-danger">
+                    ⚠️ Tu licencia fue rechazada. Por favor verifica la información y vuelve a cargar las imágenes.
+                </div>
+            {% elif not profile.license_validity.valid %}
+                <div class="alert alert-danger">
+                    ❌ Tu licencia de conducción está vencida. No podrás realizar reservaciones hasta que la actualices.
+                </div>
+            {% elif profile.license_validity.days_until_expiry and profile.license_validity.days_until_expiry < 30 %}
+                <div class="alert alert-warning">
+                    ⚠️ Tu licencia vence en {{ profile.license_validity.days_until_expiry }} días. Te recomendamos renovarla pronto.
+                </div>
+            {% endif %}
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Número de Licencia *</label>
+                    <input type="text" class="form-control" name="license_number" value="{{ profile.license_number or '' }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Fecha de Vencimiento *</label>
+                    <input type="date" class="form-control" name="license_expiry_date" value="{{ profile.license_expiry_date or '' }}" required>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Categoría de Licencia *</label>
+                <select class="form-control" name="license_category" required>
+                    <option value="">Seleccione...</option>
+                    <option value="A1" {{ 'selected' if profile.license_category == 'A1' }}>A1 - Motocicletas hasta 125cc</option>
+                    <option value="A2" {{ 'selected' if profile.license_category == 'A2' }}>A2 - Motocicletas superiores a 125cc</option>
+                    <option value="B1" {{ 'selected' if profile.license_category == 'B1' }}>B1 - Automóviles, camperos, camionetas</option>
+                    <option value="B2" {{ 'selected' if profile.license_category == 'B2' }}>B2 - Vehículos B1 + remolque</option>
+                    <option value="B3" {{ 'selected' if profile.license_category == 'B3' }}>B3 - Servicio público (taxis, buses pequeños)</option>
+                    <option value="C1" {{ 'selected' if profile.license_category == 'C1' }}>C1 - Camiones rígidos</option>
+                    <option value="C2" {{ 'selected' if profile.license_category == 'C2' }}>C2 - Camiones articulados</option>
+                    <option value="C3" {{ 'selected' if profile.license_category == 'C3' }}>C3 - Vehículos articulados pesados</option>
+                </select>
+            </div>
+            
+            <div class="document-upload">
+                <p><strong>📸 Foto de la Licencia</strong></p>
+                {% if profile.license_photo %}
+                    <img src="{{ profile.license_photo }}" class="preview-image" id="licensePhotoPreview">
+                {% endif %}
+                <br>
+                <input type="file" id="licensePhotoInput" accept="image/*" style="display: none;">
+                <button type="button" class="upload-btn" onclick="document.getElementById('licensePhotoInput').click()">
+                    Cargar Foto de la Licencia
+                </button>
+            </div>
+            
+            <!-- INFORMACIÓN DEL VEHÍCULO -->
+            <h2 class="section-title">🚗 Información del Vehículo (Opcional)</h2>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Placa del Vehículo</label>
+                    <input type="text" class="form-control" name="vehicle_plate" value="{{ profile.vehicle_plate or '' }}" style="text-transform: uppercase;">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Marca</label>
+                    <input type="text" class="form-control" name="vehicle_brand" value="{{ profile.vehicle_brand or '' }}">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label class="form-label">Modelo</label>
+                    <input type="text" class="form-control" name="vehicle_model" value="{{ profile.vehicle_model or '' }}">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <input type="text" class="form-control" name="vehicle_color" value="{{ profile.vehicle_color or '' }}">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Año</label>
+                <input type="number" class="form-control" name="vehicle_year" value="{{ profile.vehicle_year or '' }}" min="1900" max="2099">
+            </div>
+            
+            <!-- BOTÓN GUARDAR -->
+            <div style="text-align: center;">
+                <button type="submit" class="save-btn"> Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Subir foto de perfil
+document.getElementById('profilePhotoInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        uploadPhoto(file, 'profile', 'profilePhotoPreview');
+    }
+});
+
+// Subir foto del documento
+document.getElementById('documentPhotoInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        uploadPhoto(file, 'document', 'documentPhotoPreview');
+    }
+});
+
+// Subir foto de la licencia
+document.getElementById('licensePhotoInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        uploadPhoto(file, 'license', 'licensePhotoPreview');
+    }
+});
+
+// Función para subir fotos
+function uploadPhoto(file, type, previewId) {
+    const formData = new FormData();
+    formData.append('photo', file);
+    formData.append('type', type);
+    
+    // Mostrar preview inmediatamente
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        let preview = document.getElementById(previewId);
+        if (!preview) {
+            preview = document.createElement('img');
+            preview.id = previewId;
+            preview.className = 'preview-image';
+            document.querySelector(`#${type}PhotoInput`).parentElement.appendChild(preview);
+        }
+        preview.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    
+    // Subir archivo
+    fetch('/api/driver/upload-photo', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error al subir la foto: ' + data.error);
+        } else {
+            alert('✅ Foto subida correctamente');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error al subir la foto');
+    });
+}
+
+// Guardar cambios del formulario
+document.getElementById('profileForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const data = {};
+    
+    for (let [key, value] of formData.entries()) {
+        if (value !== '') {
+            data[key] = value;
+        }
+    }
+    
+    fetch('/api/driver/profile/{{ profile.id }}', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('❌ Error: ' + data.error);
+        } else {
+            alert('✅ ' + data.message);
+            location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ Error al guardar los cambios');
+    });
+});
+
+// Validar edad mínima al cambiar fecha de nacimiento
+document.querySelector('[name="birth_date"]').addEventListener('change', function() {
+    const birthDate = new Date(this.value);
+    const today = new Date();
+    const age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    
+    if (age < 18) {
+        alert('⚠️ Debes tener al menos 18 años para ser conductor en TinCar');
+        this.value = '';
+    }
+});
+
+// Validar fecha de vencimiento de licencia
+document.querySelector('[name="license_expiry_date"]').addEventListener('change', function() {
+    const expiryDate = new Date(this.value);
+    const today = new Date();
+    
+    if (expiryDate < today) {
+        alert('⚠️ La licencia de conducción está vencida. No podrás realizar reservaciones.');
+    } else {
+        const daysUntilExpiry = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+        if (daysUntilExpiry < 30) {
+            alert(`⚠️ Tu licencia vence en ${daysUntilExpiry} días. Te recomendamos renovarla pronto.`);
+        }
+    }
+});
+</script>
+
+<!-- Font Awesome para iconos -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+{% endblock %}
