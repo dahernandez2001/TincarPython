@@ -914,16 +914,19 @@ def request_extra_time(reservation_id):
         
         owner_id = parking_row[0]
         
-        # Crear notificación para el arrendador
+        conn.close()
+        
+        # NO eliminar vehicle_parked - el conductor debe seguir viendo su notificación de reserva activa
+        
+        # Crear notificación para el arrendador ÚNICAMENTE
         add_notification(
             user_id=owner_id,
             type='extra_time_request',
             message=f'El conductor solicita {extra_minutes} minutos adicionales',
             reservation_id=reservation_id,
             owner_id=owner_id,
-            extra_data=f'{{"extra_minutes": {extra_minutes}, "driver_id": {driver_id}}}'
+            extra_data={'extra_minutes': extra_minutes, 'driver_id': driver_id}
         )
-        conn.close()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -956,16 +959,21 @@ def at_vehicle(reservation_id):
         
         owner_id = parking_row[0]
         
-        # Crear notificación para el arrendador
+        # Cerrar la conexión ANTES de las operaciones de notificaciones
+        conn.close()
+        
+        # NO eliminar vehicle_parked - debe permanecer hasta que el arrendador confirme
+        
+        # Crear notificación para el arrendador ÚNICAMENTE (esto abre su propia conexión)
         add_notification(
             user_id=owner_id,
             type='at_vehicle',
             message='El conductor llegó a su vehículo',
             reservation_id=reservation_id,
             owner_id=owner_id,
-            extra_data=f'{{"driver_id": {driver_id}}}'
+            extra_data={'driver_id': driver_id}
         )
-        conn.close()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -996,25 +1004,63 @@ def approve_extra_time(reservation_id):
             conn.close()
             return jsonify({'success': False, 'error': 'No autorizado'}), 403
         
+        # Obtener nombre del arrendador
+        cur.execute('SELECT name FROM users WHERE id = ?', (owner_id,))
+        owner_row = cur.fetchone()
+        owner_name = owner_row[0] if owner_row else 'Arrendador'
+        
         # Actualizar duración de la reserva
         new_duration = current_duration + extra_minutes
         cur.execute('UPDATE reservations SET duration_minutes = ? WHERE id = ?', (new_duration, reservation_id))
         
-        # Marcar notificación de solicitud como leída
-        if notification_id:
-            cur.execute('UPDATE notifications SET status = ? WHERE id = ?', ('read', notification_id))
+        # Hacer commit y cerrar ANTES de las operaciones de notificación
+        conn.commit()
+        conn.close()
         
-        # Notificar al conductor que fue aprobado
+        # Eliminar notificación de solicitud de tiempo extra del arrendador
+        from models import delete_notifications_for_reservation
+        try:
+            delete_notifications_for_reservation(reservation_id, types_to_remove=['extra_time_request'], user_id=owner_id)
+        except Exception:
+            pass
+        
+        # Actualizar la notificación vehicle_parked del conductor con el nuevo duration_minutes
+        try:
+            conn2 = get_connection()
+            cur2 = conn2.cursor()
+            # Obtener occupied_since de parkings
+            cur2.execute('SELECT occupied_since FROM parkings p JOIN reservations r ON p.id = r.parking_id WHERE r.id = ?', (reservation_id,))
+            occ_row = cur2.fetchone()
+            occupied_since = occ_row[0] if occ_row else None
+            
+            # Obtener parking_name
+            cur2.execute('SELECT p.name FROM parkings p JOIN reservations r ON p.id = r.parking_id WHERE r.id = ?', (reservation_id,))
+            park_row = cur2.fetchone()
+            parking_name = park_row[0] if park_row else 'el parqueadero'
+            
+            # Actualizar el extra_data de la notificación vehicle_parked
+            import json
+            new_extra_data = json.dumps({
+                'parking_name': parking_name,
+                'duration_minutes': new_duration,
+                'occupied_since': occupied_since
+            })
+            cur2.execute('UPDATE notifications SET extra_data = ? WHERE reservation_id = ? AND user_id = ? AND type = ?', 
+                        (new_extra_data, reservation_id, driver_id, 'vehicle_parked'))
+            conn2.commit()
+            conn2.close()
+        except Exception as e:
+            print(f"Error actualizando notificación vehicle_parked: {e}")
+        
+        # Notificar al conductor que fue aprobado (esto abre su propia conexión)
         add_notification(
             user_id=driver_id,
             type='extra_time_approved',
             message=f'Se aprobaron {extra_minutes} minutos adicionales',
             reservation_id=reservation_id,
-            extra_data={'extra_minutes': extra_minutes}
+            extra_data={'extra_minutes': extra_minutes, 'owner_name': owner_name}
         )
         
-        conn.commit()
-        conn.close()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1044,24 +1090,76 @@ def reject_extra_time(reservation_id):
             conn.close()
             return jsonify({'success': False, 'error': 'No autorizado'}), 403
         
+        # Obtener nombre del arrendador
+        cur.execute('SELECT name FROM users WHERE id = ?', (owner_id,))
+        owner_row = cur.fetchone()
+        owner_name = owner_row[0] if owner_row else 'Arrendador'
+        
         # Marcar que se rechazó - penalty_active=1 indica que cuando se cumpla duration_minutes
         # se debe empezar a cobrar la multa. penalty_start se calculará dinámicamente.
         cur.execute('UPDATE reservations SET penalty_active = 1 WHERE id = ?', (reservation_id,))
         
-        # Marcar notificación de solicitud como leída
-        if notification_id:
-            cur.execute('UPDATE notifications SET status = ? WHERE id = ?', ('read', notification_id))
+        # Hacer commit y cerrar ANTES de las operaciones de notificación
+        conn.commit()
+        conn.close()
         
-        # Notificar al conductor que fue rechazado
+        # Eliminar notificación de solicitud de tiempo extra del arrendador
+        from models import delete_notifications_for_reservation
+        try:
+            delete_notifications_for_reservation(reservation_id, types_to_remove=['extra_time_request'], user_id=owner_id)
+        except Exception:
+            pass
+        
+        # Notificar al conductor que fue rechazado (esto abre su propia conexión)
         add_notification(
             user_id=driver_id,
             type='extra_time_rejected',
             message='Tu solicitud de tiempo extra fue rechazada. Se aplicará multa de $500 cada 5 min al exceder tu tiempo.',
-            reservation_id=reservation_id
+            reservation_id=reservation_id,
+            extra_data={'owner_name': owner_name}
         )
         
-        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reservations/<int:reservation_id>/clear-vehicle-parked', methods=['POST'])
+def clear_vehicle_parked(reservation_id):
+    """Arrendador confirma que el conductor llegó - eliminar notificación vehicle_parked del conductor."""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'not authenticated'}), 401
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''SELECT r.driver_id, p.owner_id 
+                       FROM reservations r 
+                       JOIN parkings p ON r.parking_id = p.id 
+                       WHERE r.id = ?''', (reservation_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reserva no encontrada'}), 404
+        
+        driver_id, owner_id = row
+        if owner_id != session['user_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No autorizado'}), 403
+        
         conn.close()
+        
+        # Eliminar notificación vehicle_parked del conductor
+        from models import delete_notifications_for_reservation
+        try:
+            delete_notifications_for_reservation(reservation_id, types_to_remove=['vehicle_parked'], user_id=driver_id)
+        except Exception as e:
+            print(f"Error eliminando vehicle_parked: {e}")
+        
+        # También eliminar la notificación at_vehicle del arrendador
+        try:
+            delete_notifications_for_reservation(reservation_id, types_to_remove=['at_vehicle'], user_id=owner_id)
+        except Exception as e:
+            print(f"Error eliminando at_vehicle: {e}")
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

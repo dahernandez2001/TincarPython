@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 
 # Usar una ruta absoluta al archivo de base de datos dentro del paquete `TinCar`
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -324,7 +325,7 @@ def add_reservation(driver_id, parking_id, status='pending', duration_minutes=10
     last_id = cursor.lastrowid
 
     try:
-        # Notificación para el arrendador
+        # Notificación para el arrendador ÚNICAMENTE
         if owner_id:
             add_notification(
                 user_id=owner_id,
@@ -333,7 +334,7 @@ def add_reservation(driver_id, parking_id, status='pending', duration_minutes=10
                 reservation_id=last_id,
                 owner_id=owner_id,
                 eta=eta_minutes,
-                extra_data=f'{{"driver_id": {driver_id}, "driver_name": "{driver_name}"}}'
+                extra_data={'driver_id': driver_id, 'driver_name': driver_name, 'parking_name': parking_name}
             )
 
         # NO crear notificación para el conductor al momento de reservar
@@ -385,6 +386,9 @@ def add_reservation(driver_id, parking_id, status='pending', duration_minutes=10
 def add_notification(user_id, message, type, reservation_id=None, owner_id=None, eta=None, extra_data=None):
     conn = get_connection()
     cursor = conn.cursor()
+    # Convertir extra_data a JSON string si es un diccionario
+    if extra_data and isinstance(extra_data, dict):
+        extra_data = json.dumps(extra_data)
     cursor.execute('''
         INSERT INTO notifications (user_id, message, type, reservation_id, owner_id, eta, extra_data)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -816,9 +820,10 @@ def mark_driver_arrived(reservation_id):
     conn.commit()
 
     try:
-        # Limpiar notificaciones anteriores relacionadas con esta reserva (p.ej. active_reservation / new_reservation)
+        # Limpiar notificaciones de INTERFAZ 1 al pasar a INTERFAZ 2
         try:
-            delete_notifications_for_reservation(reservation_id, types_to_remove=['active_reservation', 'new_reservation'])
+            # Eliminar notificaciones de trayecto para ambos usuarios
+            delete_notifications_for_reservation(reservation_id, types_to_remove=['active_reservation', 'new_reservation', 'eta_expired', 'reservation_expired'])
         except Exception:
             pass
         # Registrar occupied_since en el parking (timer inicia ahora)
@@ -830,7 +835,7 @@ def mark_driver_arrived(reservation_id):
         except Exception:
             pass
 
-        # Notificación para el arrendador: conductor llegó al garaje
+        # Notificación para el arrendador ÚNICAMENTE: conductor llegó al garaje
         if owner_id:
             add_notification(
                 user_id=owner_id,
@@ -839,17 +844,26 @@ def mark_driver_arrived(reservation_id):
                 reservation_id=reservation_id,
                 owner_id=owner_id,
                 eta=None,
-                extra_data=f'{{"driver_id": {reservation["driver_id"]}, "driver_name": "{driver_name}", "duration_minutes": {reservation.get("duration_minutes", 10)}, "occupied_since": "{occupied_ts}"}}'
+                extra_data={
+                    'driver_id': reservation["driver_id"], 
+                    'driver_name': driver_name, 
+                    'duration_minutes': reservation.get("duration_minutes", 10), 
+                    'occupied_since': occupied_ts
+                }
             )
 
-        # Notificación para el conductor: vehículo guardado
+        # Notificación para el conductor ÚNICAMENTE: vehículo guardado
         add_notification(
             user_id=reservation['driver_id'],
             message=f'Tu vehículo está guardado en {parking_name}.',
             type='vehicle_parked',
             reservation_id=reservation_id,
             owner_id=owner_id,
-            extra_data=f'{{"parking_name": "{parking_name}", "duration_minutes": {reservation.get("duration_minutes", 10)}, "occupied_since": "{occupied_ts}"}}'
+            extra_data={
+                'parking_name': parking_name, 
+                'duration_minutes': reservation.get("duration_minutes", 10), 
+                'occupied_since': occupied_ts
+            }
         )
     except Exception as e:
         print(f"Error creando notificaciones de llegada: {e}")
@@ -888,6 +902,7 @@ def notify_expired_reservations():
             try:
                 reservation_id = r['id'] if 'id' in r.keys() else r[0]
                 driver_id = r['driver_id'] if 'driver_id' in r.keys() else r[1]
+                parking_id = r['parking_id'] if 'parking_id' in r.keys() else r[2]
                 eta_minutes = r['eta_minutes'] if 'eta_minutes' in r.keys() and r['eta_minutes'] is not None else (r[3] if len(r) > 3 else None)
                 created_at = r['created_at'] if 'created_at' in r.keys() else (r[4] if len(r) > 4 else None)
                 parking_name = r['parking_name'] if 'parking_name' in r.keys() else (r[5] if len(r) > 5 else 'el parqueadero')
@@ -913,15 +928,31 @@ def notify_expired_reservations():
                     if exists and exists > 0:
                         continue
                     
-                    # Notificación para el conductor
+                    # Obtener nombre del conductor para la notificación del arrendador
+                    cursor.execute('SELECT name FROM users WHERE id = ?', (driver_id,))
+                    driver_row = cursor.fetchone()
+                    driver_name = driver_row[0] if driver_row else 'El conductor'
+                    
+                    # Notificación para el conductor (no llegó a tiempo)
                     add_notification(
                         user_id=driver_id,
                         message=f"No has llegado al parqueadero {parking_name}",
                         type='eta_expired',
                         reservation_id=reservation_id,
                         owner_id=owner_id,
-                        extra_data=f'{{"parking_name": "{parking_name}", "eta_minutes": {eta_minutes}}}'
+                        extra_data={'parking_name': parking_name, 'parking_id': parking_id, 'eta_minutes': eta_minutes}
                     )
+                    
+                    # Notificación para el arrendador (conductor no llegó a tiempo)
+                    if owner_id:
+                        add_notification(
+                            user_id=owner_id,
+                            message=f"El conductor no llegó al garaje en el tiempo estimulado.",
+                            type='reservation_expired',
+                            reservation_id=reservation_id,
+                            owner_id=owner_id,
+                            extra_data={'driver_id': driver_id, 'driver_name': driver_name, 'parking_name': parking_name}
+                        )
             except Exception:
                 continue
         
@@ -968,25 +999,11 @@ def notify_expired_reservations():
                         delete_notifications_for_reservation(reservation_id, types_to_remove=['parking_occupied'])
                     except Exception:
                         pass
-                    # Añadir notificación para el arrendador
-                    if owner_id:
-                        add_notification(
-                            user_id=owner_id,
-                            message=f"La reserva de {driver_name} en {parking_name} ha cumplido su tiempo. Finaliza el servicio para cobrar.",
-                            type='reservation_expired',
-                            reservation_id=reservation_id,
-                            owner_id=owner_id,
-                            extra_data=f'{{"driver_id": {driver_id}, "elapsed_minutes": {elapsed_min}}}'
-                        )
-                    # Añadir notificación para el conductor
-                    add_notification(
-                        user_id=driver_id,
-                        message=f"Tu tiempo en {parking_name} ha finalizado. Espera a que el arrendador finalice el servicio.",
-                        type='reservation_expired',
-                        reservation_id=reservation_id,
-                        owner_id=owner_id,
-                        extra_data=f'{{"elapsed_minutes": {elapsed_min}}}'
-                    )
+                    
+                    # NO enviar más notificaciones de "reservation_expired" 
+                    # El arrendador ya tiene la notificación de "driver_arrived" que le muestra el tiempo restante
+                    # El conductor ya tiene la notificación de "vehicle_parked" con el contador
+                    # Cuando el arrendador haga click en "Confirmar", ahí se abre el modal de finalización
             except Exception:
                 continue
         

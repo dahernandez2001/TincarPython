@@ -64,16 +64,18 @@ p {
 }
 
 .btn-outline-light {
-  border: 2px solid #fff;
-  color: #fff;
+  border: 2px solid #FFB300;
+  background: transparent;
+  color: #FFB300;
   font-weight: 600;
   transition: all 0.3s ease;
 }
 
 .btn-outline-light:hover {
-  background-color: #FFB300;
-  border-color: #FFB300;
+  background-color: #E88E2E;
+  border-color: #E88E2E;
   color: #1A1919;
+  transform: translateY(-1px);
 }
 
 @keyframes fadeInDown {
@@ -241,15 +243,44 @@ p {
   border-radius: 8px;
   padding: 8px 14px;
   font-weight: 700;
+  transition: all 0.2s ease;
 }
 
-.btn-orange:hover { background-color: #e69900; color: #fff }
+.btn-orange:hover { background-color: #E88E2E; color: #1A1919; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(255,179,0,0.3); }
+
+.btn-success {
+  background-color: #FFB300;
+  color: #1A1919;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  border: 2px solid #FFB300;
+}
+
+.btn-success:hover { background-color: #E88E2E; color: #1A1919; border-color: #E88E2E; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(255,179,0,0.3); }
+
+.btn-danger {
+  background-color: transparent;
+  color: #E88E2E;
+  border: 2px solid #E88E2E;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.btn-danger:hover { background-color: #E88E2E; color: #1A1919; border-color: #E88E2E; transform: translateY(-1px); }
 
 .table-responsive { scrollbar-width: thin; }
 
 .form-check-input:checked {
-  background-color: #27ae60;
-  border-color: #27ae60;
+  background-color: #FFB300;
+  border-color: #FFB300;
+}
+.form-check-input:focus {
+  border-color: #E88E2E;
+  box-shadow: 0 0 0 0.2rem rgba(255,179,0,0.25);
 }
 
 .ver-todos { display:flex; justify-content:center; }
@@ -314,7 +345,7 @@ header nav a:hover { color: #FFB300 }
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.45);
+  background: rgba(26,25,25,0.65);
   backdrop-filter: blur(4px);
   z-index: 2000;
 }
@@ -322,22 +353,26 @@ header nav a:hover { color: #FFB300 }
 .modal-card {
   width: 90%;
   max-width: 920px;
-  background: rgba(24,24,24,0.98);
+  background: #2C2C2C;
+  border: 2px solid #FFB300;
   border-radius: 12px;
   transform: scale(0.85);
   transition: transform 220ms ease, opacity 220ms ease;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 20px rgba(255,179,0,0.15);
   position: relative;
   overflow: hidden;
   opacity: 0;
 }
 .modal-overlay.open .modal-card { transform: scale(1); opacity: 1 }
-.modal-close { position:absolute; right:14px; top:14px; background:#FFB300; border-radius:50%; width:34px; height:34px; border:none; color:#1A1919; font-weight:700 }
-.modal-header { padding:18px 12px; }
-.modal-body { padding: 8px 20px 18px 20px; }
-.modal-footer { padding: 0 20px; }
-.upload-placeholder { width:140px; height:120px; background: rgba(255,255,255,0.03); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#aaa }
-.form-control { background-color: rgba(255,255,255,0.03); border: none; color: #eee }
+.modal-close { position:absolute; right:14px; top:14px; background:#FFB300; border-radius:50%; width:34px; height:34px; border:none; color:#1A1919; font-weight:700; transition: all 0.2s ease; }
+.modal-close:hover { background:#E88E2E; transform: rotate(90deg); }
+.modal-header { padding:18px 12px; background: #1A1919; color: #FFB300; border-bottom: 1px solid #FFB300; }
+.modal-body { padding: 8px 20px 18px 20px; color: #FFEFCA; }
+.modal-footer { padding: 0 20px; border-top: 1px solid rgba(255,179,0,0.2); }
+.upload-placeholder { width:140px; height:120px; background: rgba(44,44,44,0.5); border: 2px dashed #FFB300; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#FFB300; transition: all 0.2s ease; }
+.upload-placeholder:hover { background: rgba(44,44,44,0.8); border-color: #E88E2E; color: #E88E2E; }
+.form-control { background-color: rgba(44,44,44,0.5); border: 1px solid #FFB300; color: #FFEFCA; transition: all 0.2s ease; }
+.form-control:focus { background-color: rgba(44,44,44,0.8); border-color: #E88E2E; color: #FFEFCA; box-shadow: 0 0 0 0.2rem rgba(255,179,0,0.25); }
 .form-control::placeholder { color: #9b9b9b }
 .btn-outline-light { background: transparent; color: #FFB300; border: 2px solid #FFB300; }
 

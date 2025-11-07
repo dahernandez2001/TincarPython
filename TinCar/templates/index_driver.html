@@ -155,7 +155,7 @@
           </div>
         </div>
 
-      <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+      <div class="modal-footer d-flex justify-content-between p-3" style="background:#1A1919; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
         <button type="button" id="dp-cancel" class="btn btn-outline-light">Cancelar</button>
         <button type="button" id="dp-reserve" class="btn btn-orange">Reservar</button>
       </div>
@@ -193,40 +193,60 @@
     try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
     let html = '';
     
+    // ========== SEGUNDA INTERFAZ: RESERVA ACTIVA ==========
     if (notification.type === 'vehicle_parked') {
       // Vehículo guardado - mostrar tiempo restante de reserva
       const dur = extra.duration_minutes || notification.duration_minutes || 0;
       const occ = extra.occupied_since || notification.occupied_since || '';
       const resId = notification.reservation_id || extra.reservation_id || 0;
+      html += `<h6 class="text-success mb-3">RESERVA ACTIVA</h6>`;
       html += `<p>Tu vehículo está guardado, te queda <span class="time-remaining" data-duration="${dur}" data-occupied="${occ}">--:--:--</span></p>`;
       html += `<hr>`;
       html += `<button class="btn btn-warning me-2" onclick="requestExtraTime(${resId})">Más tiempo</button>`;
       html += `<button class="btn btn-success" onclick="notifyAtVehicle(${resId})">Estoy en mi vehículo</button>`;
-      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
-    } else if (notification.type === 'eta_expired') {
-      // No llegó a tiempo (ETA expirado)
+      return `<div class="notification-item interface-segunda ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } 
+    // ========== PRIMERA INTERFAZ: ETA EXPIRADO ==========
+    else if (notification.type === 'eta_expired') {
+      html += `<h6 class="text-danger mb-3">TIEMPO AGOTADO</h6>`;
       html += `<p>No has llegado al parqueadero.</p>`;
       html += `<hr>`;
-      html += `<button class="btn btn-orange me-2" onclick="showGarageInfo(${notification.parking_id || 0})">Garaje</button>`;
+      html += `<button class="btn btn-warning me-2" onclick="showGarageInfo(${notification.parking_id || 0})">Ver garaje</button>`;
       html += `<button class="btn btn-outline-light" onclick="cancelReservation(${notification.reservation_id})">Cancelar reserva</button>`;
-      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
-    } else if (notification.type === 'extra_time_approved') {
-      // Solicitud de tiempo extra aprobada
-      html += `<p class="text-success">✓ El arrendador aprobó ${extra.extra_minutes || 0} minutos adicionales.</p>`;
-      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
-    } else if (notification.type === 'extra_time_rejected') {
-      // Solicitud de tiempo extra rechazada
-      html += `<p class="text-danger">✗ El arrendador rechazó tu solicitud de tiempo extra. Se aplicará multa de $500 cada 5 min.</p>`;
-      return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
-    } else {
+      return `<div class="notification-item interface-primera ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } 
+    // ========== SEGUNDA INTERFAZ: RESPUESTAS DE TIEMPO EXTRA ==========
+    else if (notification.type === 'extra_time_approved') {
+      const ownerName = extra.owner_name || 'El arrendador';
+      html += `<div class="alert alert-success mb-0">`;
+      html += `<p class="mb-0"><strong>${ownerName}</strong> aprobó <strong>${extra.extra_minutes || 0} minutos</strong> adicionales.</p>`;
+      html += `</div>`;
+      return `<div class="notification-item interface-segunda ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } 
+    else if (notification.type === 'extra_time_rejected') {
+      const ownerName = extra.owner_name || 'El arrendador';
+      html += `<div class="alert alert-danger mb-0">`;
+      html += `<p class="mb-1"><strong>${ownerName}</strong> rechazó tu solicitud de tiempo extra.</p>`;
+      html += `<small class="d-block mb-0">Se aplicará multa de <strong>$500 cada 5 min</strong> al exceder tu tiempo.</small>`;
+      html += `</div>`;
+      return `<div class="notification-item interface-segunda ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    } 
+    // ========== FILTRAR NOTIFICACIONES QUE NO SON DEL CONDUCTOR ==========
+    else if (notification.type === 'reservation_completed' || notification.type === 'reservation_cancelled') {
+      // Mostrar notificaciones de finalización/cancelación
       html += `<p>${notification.message}</p>`;
       return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+    }
+    else {
+      // NO mostrar notificaciones que son del arrendador (driver_arrived, at_vehicle, new_reservation, etc.)
+      console.log('Notificación filtrada (no es del conductor):', notification.type);
+      return ''; // No renderizar nada
     }
   }
 
   // Función para cargar reservas activas y notificaciones
   function loadNotifications() {
-  // Primero cargar reservas activas (solo las pendientes con botón de Llegué)
+  // ========== PRIMERA INTERFAZ: TRAYECTO AL GARAJE ==========
   fetch('/api/reservations/active/driver')
         .then(response => response.json())
         .then(data => {
@@ -235,14 +255,17 @@
             // Solo mostrar reservas pendientes (antes de marcar "Llegué")
             const pendingReservations = data.reservations.filter(r => r.status === 'pending');
             activeHtml = pendingReservations.map(r => `
-              <div class="notification-item active-reservation">
-                <p>Reserva activa del garaje <strong>${r.parking_name}</strong>. Recuerda llegar antes de <span class="time-remaining" data-duration="${r.eta_minutes||0}" data-occupied="${r.created_at||''}" data-iseta="true">--:--:--</span></p>
+              <div class="notification-item interface-primera active-reservation">
+                <h6 class="text-primary mb-3">TRAYECTO AL GARAJE</h6>
+                <p>Reservaste el garaje <strong>${r.parking_name}</strong> de <strong>${r.owner_name || 'un arrendador'}</strong>.</p>
+                <p class="mb-2">Recuerda que tienes que llegar antes de <strong>ETA <span class="time-remaining" data-duration="${r.eta_minutes||0}" data-occupied="${r.created_at||''}" data-iseta="true">--:--:--</span></strong></p>
                 <hr>
-                <button class="btn btn-success me-2" onclick="markAsArrived(${r.id})">Llegué</button>
+                <button class="btn btn-warning me-2" onclick="markAsArrived(${r.id})">Llegué</button>
+                <button class="btn btn-outline-light" onclick="cancelReservation(${r.id})">Cancelar servicio</button>
               </div>
             `).join('');
           }
-          // Luego cargar notificaciones normales
+          // ========== SEGUNDA INTERFAZ: NOTIFICACIONES DE RESERVA ACTIVA ==========
           fetch('/api/notifications')
             .then(response => response.json())
             .then(data2 => {
@@ -255,7 +278,7 @@
                   if (notifications.length === 0 && !activeHtml) {
                     notifHtml = '<div class="text-center py-4" style="color:#939393;">Buzón vacío</div>';
                   } else {
-                    notifHtml = notifications.map(formatNotification).join('');
+                    notifHtml = notifications.map(formatNotification).filter(n => n !== '').join('');
                   }
                   notificationsList.innerHTML = activeHtml + notifHtml;
                   // Señalamos que el render de notificaciones ha terminado
@@ -346,6 +369,22 @@
       })
       .catch(() => alert('Error de red al cancelar la reserva'))
       .finally(() => { if (window.pendingCancels) window.pendingCancels.delete(reservationId); });
+  }
+
+  function dismissNotification(notificationId) {
+    if (!notificationId) return;
+    // Eliminar visualmente la notificación
+    const notifElement = document.querySelector(`.notification-item[data-id="${notificationId}"]`);
+    if (notifElement) {
+      notifElement.remove();
+    }
+    // Marcar como leída en el servidor
+    fetch('/api/notifications/mark-read', { method: 'POST' })
+      .then(() => {
+        updateNotificationCount();
+        loadNotifications();
+      })
+      .catch(err => console.error('Error al marcar notificación:', err));
   }
 
     function finishReservation(reservationId) {

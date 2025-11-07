@@ -114,7 +114,7 @@
             </div>
           </div>
 
-          <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+          <div class="modal-footer d-flex justify-content-between p-3" style="background:#1A1919; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
             <button type="button" id="cancelBtn" class="btn btn-outline-light">Cancelar</button>
             <button type="submit" class="btn btn-orange">Agregar</button>
           </div>
@@ -177,7 +177,7 @@
             </div>
           </div>
 
-          <div class="modal-footer d-flex justify-content-between p-3" style="background:#FFEFE0; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
+          <div class="modal-footer d-flex justify-content-between p-3" style="background:#1A1919; border-bottom-left-radius:8px; border-bottom-right-radius:8px;">
             <div>
               <button type="button" id="deleteParkingBtn" class="btn btn-outline-light">Eliminar</button>
             </div>
@@ -287,41 +287,66 @@ function loadNotifications() {
           if (notifications.length === 0) {
             notifHtml = '<div class="text-center text-muted py-4">Buzón vacío</div>';
           } else {
-            // Usar el mismo formato que en la vista conductor para consistencia
+            // Nueva función formatNotification con diseño de 3 interfaces
             function formatNotification(notification) {
               let extra = {};
               try { extra = JSON.parse(notification.extra_data || '{}'); } catch(e){}
               let html = '';
               const resId = notification.reservation_id || extra.reservation_id || 0;
               
+              // ==================== PRIMERA INTERFAZ: LLEGADA DEL CONDUCTOR ====================
               if (notification.type === 'new_reservation') {
+                html += `<div class="interface-header">NUEVA RESERVA</div>`;
                 html += `<p>Tu garaje, <strong>${extra.parking_name || ''}</strong> fue reservado por <strong>${extra.driver_name || ''}</strong> y llegará en <strong>${notification.eta || ''} minutos</strong>.</p>`;
-                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${resId})">Cancelar reserva</button>`;
-              } else if (notification.type === 'driver_arrived') {
+                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Ver conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${resId})">Cancelar reserva</button>`;
+                return `<div class="notification-item interface-primera ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+              } else if (notification.type === 'reservation_expired') {
+                // ETA expirado - conductor no llegó a tiempo
+                html += `<div class="interface-header" style="background-color: #E88E2E; color: #1A1919;">NO LLEGÓ A TIEMPO</div>`;
+                html += `<p>El conductor no llegó al garaje en el tiempo estimulado.</p>`;
+                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Ver conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${resId})">Cancelar reserva</button>`;
+                return `<div class="notification-item interface-primera ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+              }
+              
+              // ==================== SEGUNDA INTERFAZ: RESERVA ACTIVA ====================
+              else if (notification.type === 'driver_arrived') {
                 // Conductor llegó al garaje
+                html += `<div class="interface-header" style="background-color: #FFB300; color: #1A1919;">VEHÍCULO GUARDADO</div>`;
                 const dur = extra.duration_minutes || notification.duration_minutes || 0;
                 const occ = extra.occupied_since || notification.occupied_since || '';
                 html += `<p>${notification.message} Volverá en: <span class="time-remaining" data-duration="${dur}" data-occupied="${occ}">--:--:--</span></p>`;
-                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button>`;
+                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Ver conductor</button>`;
+                return `<div class="notification-item interface-segunda ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
               } else if (notification.type === 'at_vehicle') {
                 // Conductor llegó a su vehículo
+                html += `<div class="interface-header segunda" style="background-color: #2C2C2C; color: #FFB300; border-color: #E88E2E;">CONDUCTOR EN VEHÍCULO</div>`;
                 html += `<p>El conductor llegó a su vehículo.</p>`;
                 html += `<hr><button class="btn btn-success me-2" onclick="confirmVehicleArrival(${resId})">Confirmar</button><button class="btn btn-outline-light" onclick="vehicleNotArrived(${resId})">No ha llegado</button>`;
+                return `<div class="notification-item interface-segunda ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
               } else if (notification.type === 'extra_time_request') {
                 // Solicitud de tiempo extra del conductor
+                html += `<div class="interface-header" style="background-color: #FFB300; color: #1A1919;">SOLICITUD TIEMPO EXTRA</div>`;
                 const extraMin = extra.extra_minutes || 0;
                 html += `<p>El conductor quiere agregar <strong>${extraMin} minutos</strong> de reserva.</p>`;
-                html += `<hr><button class="btn btn-danger me-2" onclick="rejectExtraTime(${resId}, ${notification.id})">Cancelar</button><button class="btn btn-success" onclick="approveExtraTime(${resId}, ${extraMin}, ${notification.id})">Aceptar</button>`;
-              } else if (notification.type === 'reservation_expired') {
-                // ETA expirado - conductor no llegó a tiempo
-                html += `<p>El conductor no llegó al garaje en el tiempo estimulado.</p>`;
-                html += `<hr><button class="btn btn-orange me-2" onclick="showDriverInfo(${extra.driver_id || 0})">Conductor</button><button class="btn btn-outline-light" onclick="cancelReservation(${resId})">Cancelar reserva</button>`;
-              } else {
-                html += `<p>${notification.message}</p>`;
+                html += `<hr><button class="btn btn-danger me-2" onclick="rejectExtraTime(${resId}, ${notification.id})">Rechazar</button><button class="btn btn-success" onclick="approveExtraTime(${resId}, ${extraMin}, ${notification.id})">Aceptar</button>`;
+                return `<div class="notification-item interface-segunda ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
               }
-              return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+              
+              // ==================== OTRAS NOTIFICACIONES ====================
+              else if (notification.type === 'reservation_completed' || notification.type === 'reservation_cancelled') {
+                // Mostrar notificaciones de finalización/cancelación
+                html += `<p>${notification.message}</p>`;
+                return `<div class="notification-item ${notification.status === 'unread' ? 'unread' : ''}" data-id="${notification.id}">${html}</div>`;
+              }
+              
+              // ==================== FILTRAR NOTIFICACIONES QUE NO SON DEL ARRENDADOR ====================
+              else {
+                // NO mostrar notificaciones que son del conductor (vehicle_parked, eta_expired, extra_time_approved, extra_time_rejected)
+                console.log('Notificación filtrada (no es del arrendador):', notification.type);
+                return ''; // No renderizar nada
+              }
             }
-            notifHtml = notifications.map(formatNotification).join('');
+            notifHtml = notifications.map(formatNotification).filter(n => n !== '').join('');
           }
           notificationsList.innerHTML = notifHtml;
           // Señalamos que el render de notificaciones ha terminado
@@ -593,8 +618,20 @@ function confirmVehicleArrival(reservationId) {
     notifModal.classList.remove('open');
     notifModal.setAttribute('aria-hidden', 'true');
   }
-  // Abrir modal de finalización
-  openFinishModal(reservationId);
+  
+  // Eliminar notificación vehicle_parked del conductor antes de abrir modal
+  fetch(`/api/reservations/${reservationId}/clear-vehicle-parked`, {
+    method: 'POST'
+  })
+  .then(response => response.json())
+  .then(data => {
+    // Abrir modal de finalización (independientemente del resultado)
+    openFinishModal(reservationId);
+  })
+  .catch(() => {
+    // Abrir modal de finalización incluso si falla la limpieza
+    openFinishModal(reservationId);
+  });
 }
 
 // Conductor no ha llegado - continúa el tiempo sin multa
