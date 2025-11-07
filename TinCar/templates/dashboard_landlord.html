@@ -1,21 +1,23 @@
 {% extends "layout.html" %}
 {% block content %}
 
-<!-- Header (logo + nav) -->
-<header class="py-3">
-  <div class="container d-flex align-items-center justify-content-between">
-    <div class="d-flex align-items-center">
-      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar" style="height:44px; margin-right:14px;">
-      <span class="h4 text-warning fw-bold mb-0">TinCar</span>
-    </div>
-    <div class="nav">
-      <a href="#" class="nav-link">Inicio</a>
-      <a href="#" class="nav-link">Reservar</a>
-      <a href="#" class="nav-link">Configuración</a>
-      <div class="nav-bubble"></div>
+<!-- Navbar dentro del contenido -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark px-4 py-3 border-bottom border-secondary">
+  <div class="container-fluid">
+    <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="logo" style="height:44px; margin-right:14px;">
+      <span class="fs-4 fw-bold text-warning">TinCar</span>
+    </a>
+    <div class="collapse navbar-collapse justify-content-end">
+      <div class="nav">
+        <a href="#" class="nav-link">Inicio</a>
+        <a href="#" class="nav-link">Reservar</a>
+        <a href="#" class="nav-link">Configuración</a>
+        <div class="nav-bubble"></div>
+      </div>
     </div>
   </div>
-</header>
+</nav>
 
 <!-- Cono de notificaciones flotante -->
 <div id="notificationIcon" class="notification-cone-fixed">

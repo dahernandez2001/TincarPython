@@ -4,8 +4,8 @@
 <!-- Navbar dentro del contenido -->
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark px-4 py-3 border-bottom border-secondary">
   <div class="container-fluid">
-  <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
-      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="logo" width="45" class="me-2">
+    <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="logo" style="height:44px; margin-right:14px;">
       <span class="fs-4 fw-bold text-warning">TinCar</span>
     </a>
     <div class="collapse navbar-collapse justify-content-end">
@@ -48,9 +48,6 @@
   <!-- Bienvenida -->
   <div class="text-center mb-4">
     <h1 class="fw-bold" style="color: #FFB300;">Bienvenido, {{ session.get('user_name') or session.get('name') or 'Usuario' }}</h1>
-    <h5 class="text-secondary">
-      Estás registrado como <span class="fw-semibold text-info">Conductor</span>.
-    </h5>
   </div>
 
   <!-- Tarjeta principal -->
@@ -58,7 +55,7 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
       <div>
         <h2 class="fw-bold">Modo conductor</h2>
-        <p class="text-secondary">({{ session.get('user_name') or session.get('name') or 'nombre de usuario' }})</p>
+        <p class="text-secondary">Selecciona un parqueadero</p>
       </div>
 
       <div class="d-flex align-items-center mt-3 mt-md-0">

@@ -509,7 +509,7 @@ header nav a:hover { color: #FFB300 }
   position: relative;
   padding: 8px 12px;
   border-radius: 999px;
-  color: inherit;
+  color: #fff;
   text-decoration: none;
   z-index: 2; /* encima de la burbuja */
   font-weight: 500;
