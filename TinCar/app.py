@@ -65,7 +65,20 @@ get_db_connection = get_connection
 # === Rutas principales ===
 @app.route('/')
 def home():
+    # Si el usuario ya está logueado, redirigir al dashboard correspondiente
+    if 'user_id' in session:
+        role = session.get('role')
+        if role == 'conductor':
+            return redirect(url_for('driver_index'))
+        elif role == 'arrendador':
+            return redirect(url_for('landlord_index'))
+    
     return render_template('index.html')
+
+
+@app.route('/servicios')
+def servicios():
+    return render_template('servicios.html')
 
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -154,7 +167,7 @@ def dashboard():
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('auth.login'))
+    return redirect(url_for('home'))
 
 
 # === Ruta para conductor ===

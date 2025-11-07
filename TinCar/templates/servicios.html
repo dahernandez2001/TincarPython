@@ -1,0 +1,141 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+  :root {
+    --primary: #FFB300;
+    --dark: #1A1919;
+    --light-dark: #2C2C2C;
+    --cream: #FFEFCA;
+    --accent: #E88E2E;
+  }
+
+  body {
+    background-color: var(--dark);
+  }
+
+  /* Estilos para navegación con burbuja */
+  .nav {
+    position: relative;
+    display: flex;
+    gap: 12px;
+    padding: 8px;
+    align-items: center;
+    background: transparent;
+  }
+
+  .nav a {
+    position: relative;
+    padding: 8px 12px;
+    border-radius: 999px;
+    color: #fff;
+    text-decoration: none;
+    z-index: 2;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+
+  .nav a:hover {
+    color: #FFB300 !important;
+  }
+
+  .nav-bubble {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: 0;
+    width: 0;
+    height: 36px;
+    background: rgba(255, 179, 0, 0.12);
+    border: 1px solid rgba(255, 179, 0, 0.18);
+    border-radius: 999px;
+    transition: left .20s ease, width .20s ease, height .20s ease;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .service-card {
+    background-color: transparent;
+    border: 1px solid #6c757d;
+    border-radius: 1rem;
+  }
+
+  .service-badge {
+    background-color: var(--primary);
+    color: var(--dark);
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+  }
+
+  .divider-line {
+    border-color: #f8f9fa !important;
+  }
+</style>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary py-3">
+  <div class="container">
+    <a class="navbar-brand text-warning fw-bold d-flex align-items-center" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar" width="60" class="me-2">
+      TinCar
+    </a>
+    <div class="ms-auto">
+      <div class="nav">
+        <a href="{{ url_for('home') }}">Inicio</a>
+        <div class="nav-bubble"></div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- Sección de Servicios -->
+<section class="container py-5">
+  <h2 class="fw-bold mb-4 text-warning">Servicios</h2>
+
+  <div class="mb-5 p-4 service-card">
+    <div class="d-flex align-items-center mb-3">
+      <hr class="flex-grow-1 divider-line">
+      <span class="service-badge ms-2">Servicio de parqueo (conductor)</span>
+    </div>
+    <p class="text-light">
+      Facilita a los conductores encontrar, reservar y pagar parqueaderos cercanos en tiempo real, optimizando su tiempo y reduciendo la búsqueda de espacios disponibles.
+    </p>
+  </div>
+
+  <div class="p-4 service-card">
+    <div class="d-flex align-items-center mb-3">
+      <hr class="flex-grow-1 divider-line">
+      <span class="service-badge ms-2">Servicio de arriendo</span>
+    </div>
+    <p class="text-light">
+      Permite a los dueños de parqueaderos ofrecer sus espacios disponibles, gestionar horarios, tarifas y reservas, y obtener ingresos de manera segura y eficiente.
+    </p>
+  </div>
+</section>
+
+<script>
+  // Script para la burbuja de navegación
+  document.addEventListener('DOMContentLoaded', () => {
+    const nav = document.querySelector('.nav');
+    const bubble = document.querySelector('.nav-bubble');
+    const links = nav ? nav.querySelectorAll('a') : [];
+
+    links.forEach(link => {
+      link.addEventListener('mouseenter', function() {
+        const rect = this.getBoundingClientRect();
+        const navRect = nav.getBoundingClientRect();
+        
+        bubble.style.left = (rect.left - navRect.left) + 'px';
+        bubble.style.width = rect.width + 'px';
+        bubble.style.height = rect.height + 'px';
+      });
+    });
+
+    nav?.addEventListener('mouseleave', () => {
+      bubble.style.width = '0';
+    });
+  });
+</script>
+
+{% endblock %}

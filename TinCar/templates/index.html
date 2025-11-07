@@ -1,22 +1,181 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<section class="hero d-flex flex-column justify-content-center align-items-center text-center">
-  <!-- Logo -->
-  <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar Logo" class="logo mb-4">
+<style>
+  :root {
+    --primary: #FFB300;
+    --dark: #1A1919;
+    --light-dark: #2C2C2C;
+    --cream: #FFEFCA;
+    --accent: #E88E2E;
+  }
 
-  <!-- Título principal -->
-  <h1 class="text-white fw-bold mb-3">Bienvenido a TinCar</h1>
+  .hero-section {
+    min-height: 70vh;
+    display: flex;
+    align-items: center;
+  }
 
-  <!-- Subtítulo / descripción -->
-  <p class="text-white-50 fs-5 mb-4">
-    Encuentra, reserva o arrienda parqueaderos fácilmente
-  </p>
+  .hero-logo {
+    width: 400px;
+    max-width: 100%;
+    filter: drop-shadow(0 0 12px var(--primary));
+    transition: transform 0.3s ease-in-out;
+  }
 
-  <!-- Botones principales -->
-  <div class="mt-2">
-    <a href="{{ url_for('login') }}" class="btn btn-warning btn-lg mx-2">Iniciar Sesión</a>
-    <a href="{{ url_for('register') }}" class="btn btn-outline-light btn-lg mx-2">Registrarse</a>
+  .hero-logo:hover {
+    transform: scale(1.05);
+  }
+
+  /* Efecto de zoom al abrir modal */
+  .modal-zoom .modal-content {
+    transform: scale(0.7);
+    opacity: 0;
+    transition: all 0.35s ease-in-out;
+  }
+  
+  .modal.show .modal-zoom .modal-content {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  /* Fondo del overlay */
+  .modal-backdrop.show {
+    background-color: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Botón de cierre */
+  .btn-close-custom {
+    background-color: var(--primary);
+    border-radius: 50%;
+    padding: 10px;
+    opacity: 1;
+  }
+
+  /* Formulario */
+  .form-control {
+    border-radius: 10px;
+    padding: 12px 15px;
+  }
+
+  .about-section {
+    background-color: var(--cream);
+    color: var(--dark);
+  }
+
+  /* Estilos para navegación con burbuja - igual que en perfil conductor */
+  .nav {
+    position: relative;
+    display: flex;
+    gap: 12px;
+    padding: 8px;
+    align-items: center;
+    background: transparent;
+  }
+
+  .nav a {
+    position: relative;
+    padding: 8px 12px;
+    border-radius: 999px;
+    color: #fff;
+    text-decoration: none;
+    z-index: 2;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+
+  .nav a:hover {
+    color: #FFB300 !important;
+  }
+
+  .nav-bubble {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: 0;
+    width: 0;
+    height: 36px;
+    background: rgba(255, 179, 0, 0.12);
+    border: 1px solid rgba(255, 179, 0, 0.18);
+    border-radius: 999px;
+    transition: left .20s ease, width .20s ease, height .20s ease;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+</style>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary py-3">
+  <div class="container">
+    <a class="navbar-brand text-warning fw-bold d-flex align-items-center" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar" width="60" class="me-2">
+      TinCar
+    </a>
+    <div class="ms-auto">
+      <div class="nav">
+        <a href="{{ url_for('servicios') }}">Servicios</a>
+        <div class="nav-bubble"></div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero Section -->
+<section class="container hero-section">
+  <div class="row align-items-center">
+    <div class="col-md-6 text-center text-md-start">
+      <h1 class="fw-bold text-warning display-4">Bienvenido a TinCar</h1>
+      <p class="lead text-light">Con TinCar, guardamos tu tranquilidad en casa.</p>
+      <div class="mt-4">
+        <a href="{{ url_for('register') }}" class="btn btn-warning me-3 fw-semibold btn-lg">Registrarse</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-outline-light fw-semibold btn-lg">Inicia sesión</a>
+      </div>
+    </div>
+    <div class="col-md-6 text-center mt-5 mt-md-0">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar Logo" class="hero-logo">
+    </div>
   </div>
 </section>
+
+<!-- Sobre TinCar -->
+<section class="py-5 about-section" id="sobre-tincar">
+  <div class="container">
+    <h2 class="fw-bold mb-3">Sobre TinCar</h2>
+    <p class="lead" style="color: #939393;">
+      El propósito de TinCar es reducir la congestión vehicular en las grandes ciudades mediante estrategias innovadoras que mejoren la movilidad y promuevan un tránsito más fluido y sostenible.
+    </p>
+    <a href="https://monocode777.github.io/TinCar-Portafolio/" target="_blank" class="btn btn-warning fw-semibold mt-3 btn-lg">Saber más</a>
+  </div>
+</section>
+
+<script>
+  // Script para la burbuja de navegación
+  document.addEventListener('DOMContentLoaded', () => {
+    const nav = document.querySelector('.nav');
+    const bubble = document.querySelector('.nav-bubble');
+    const links = nav ? nav.querySelectorAll('a') : [];
+
+    links.forEach(link => {
+      link.addEventListener('mouseenter', function() {
+        const rect = this.getBoundingClientRect();
+        const navRect = nav.getBoundingClientRect();
+        
+        bubble.style.left = (rect.left - navRect.left) + 'px';
+        bubble.style.width = rect.width + 'px';
+        bubble.style.height = rect.height + 'px';
+      });
+    });
+
+    nav?.addEventListener('mouseleave', () => {
+      bubble.style.width = '0';
+    });
+  });
+</script>
+
 {% endblock %}
+
