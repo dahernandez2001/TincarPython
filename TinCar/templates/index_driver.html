@@ -9,21 +9,23 @@
       <span class="fs-4 fw-bold text-warning">TinCar</span>
     </a>
     <div class="collapse navbar-collapse justify-content-end">
-      <ul class="navbar-nav">
-  <li class="nav-item"><a class="nav-link active" href="{{ url_for('home') }}">Inicio</a></li>
-  <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Arrendar</a></li>
-  <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Configuración</a></li>
-      </ul>
+      <div class="nav">
+        <a class="nav-link" href="{{ url_for('home') }}">Inicio</a>
+        <a class="nav-link" href="{{ url_for('home') }}">Arrendar</a>
+        <a class="nav-link" href="{{ url_for('home') }}">Configuración</a>
+        <div class="nav-bubble"></div>
+      </div>
     </div>
   </div>
 </nav>
 
+<!-- Cono de notificaciones flotante -->
+<div id="notificationIcon" class="notification-cone-fixed" onclick="openNotificationsModal()">
+  <img src="{{ url_for('static', filename='img/cono.png') }}" alt="Notificaciones">
+  <span id="notificationCount" class="notification-badge-cone">0</span>
+</div>
+
 <main class="container py-5 text-light">
-  <!-- Notificaciones -->
-  <div id="notificationIcon" class="position-fixed" style="top: 20px; right: 20px; cursor: pointer;" onclick="openNotificationsModal()">
-    <img src="{{ url_for('static', filename='img/cono.png') }}" alt="Notificaciones" style="width: 40px; height: 40px;">
-    <span id="notificationCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
-  </div>
 
   <!-- Modal de Notificaciones -->
   <div id="notificationsModal" class="modal-overlay" aria-hidden="true" style="z-index:9999;">
@@ -172,6 +174,30 @@
 
   {% raw %}
   <script>
+  // Animación de burbuja en navegación
+  document.addEventListener('DOMContentLoaded', () => {
+    const nav = document.querySelector('.nav');
+    if (nav) {
+      const bubble = document.querySelector('.nav-bubble');
+      const links = nav.querySelectorAll('a.nav-link');
+      
+      links.forEach(link => {
+        link.addEventListener('mouseenter', () => {
+          const rect = link.getBoundingClientRect();
+          const navRect = nav.getBoundingClientRect();
+          
+          bubble.style.left = (rect.left - navRect.left) + 'px';
+          bubble.style.width = rect.width + 'px';
+          bubble.style.height = rect.height + 'px';
+        });
+      });
+      
+      nav.addEventListener('mouseleave', () => {
+        bubble.style.width = '0';
+      });
+    }
+  });
+
   // Funciones para el manejo de notificaciones
   let notifications = [];
   // Evitar reintentos paralelos de cancelación
@@ -199,8 +225,8 @@
       const dur = extra.duration_minutes || notification.duration_minutes || 0;
       const occ = extra.occupied_since || notification.occupied_since || '';
       const resId = notification.reservation_id || extra.reservation_id || 0;
-      html += `<h6 class="text-success mb-3">RESERVA ACTIVA</h6>`;
-      html += `<p>Tu vehículo está guardado, te queda <span class="time-remaining" data-duration="${dur}" data-occupied="${occ}">--:--:--</span></p>`;
+      html += `<div class="interface-header segunda" style="background-color: #2C2C2C; color: #FFB300; border-color: #E88E2E;">RESERVA ACTIVA</div>`;
+      html += `<p>Tu vehículo está guardado, te queda <span class="time-remaining" data-duration="${dur}" data-occupied="${occ}" style="display: inline-block; min-width: 65px; text-align: center;">--:--:--</span></p>`;
       html += `<hr>`;
       html += `<button class="btn btn-warning me-2" onclick="requestExtraTime(${resId})">Más tiempo</button>`;
       html += `<button class="btn btn-success" onclick="notifyAtVehicle(${resId})">Estoy en mi vehículo</button>`;
@@ -208,7 +234,7 @@
     } 
     // ========== PRIMERA INTERFAZ: ETA EXPIRADO ==========
     else if (notification.type === 'eta_expired') {
-      html += `<h6 class="text-danger mb-3">TIEMPO AGOTADO</h6>`;
+      html += `<div class="interface-header" style="background-color: #E88E2E; color: #1A1919;">TIEMPO AGOTADO</div>`;
       html += `<p>No has llegado al parqueadero.</p>`;
       html += `<hr>`;
       html += `<button class="btn btn-warning me-2" onclick="showGarageInfo(${notification.parking_id || 0})">Ver garaje</button>`;
@@ -256,9 +282,9 @@
             const pendingReservations = data.reservations.filter(r => r.status === 'pending');
             activeHtml = pendingReservations.map(r => `
               <div class="notification-item interface-primera active-reservation">
-                <h6 class="text-primary mb-3">TRAYECTO AL GARAJE</h6>
-                <p>Reservaste el garaje <strong>${r.parking_name}</strong> de <strong>${r.owner_name || 'un arrendador'}</strong>.</p>
-                <p class="mb-2">Recuerda que tienes que llegar antes de <strong>ETA <span class="time-remaining" data-duration="${r.eta_minutes||0}" data-occupied="${r.created_at||''}" data-iseta="true">--:--:--</span></strong></p>
+                <div class="interface-header" style="background-color: #FFB300; color: #1A1919;">TRAYECTO AL GARAJE</div>
+                <p>Reservaste el garaje <strong>${r.parking_name}</strong> de <strong>${r.owner_name}</strong>.</p>
+                <p class="mb-2">Recuerda que tienes que llegar antes de <strong>ETA: <span class="time-remaining" data-duration="${r.eta_minutes||0}" data-occupied="${r.created_at||''}" data-iseta="true" style="display: inline-block; min-width: 65px; text-align: center;">--:--:--</span></strong></p>
                 <hr>
                 <button class="btn btn-warning me-2" onclick="markAsArrived(${r.id})">Llegué</button>
                 <button class="btn btn-outline-light" onclick="cancelReservation(${r.id})">Cancelar servicio</button>

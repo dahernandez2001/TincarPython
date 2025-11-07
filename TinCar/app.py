@@ -614,10 +614,12 @@ def api_get_active_reservations_driver():
         cursor = conn.cursor()
         cursor.execute('''
          SELECT r.id, r.status, r.duration_minutes, r.eta_minutes, r.created_at, r.driver_id,
-             u.name as driver_name, r.parking_id, p.name as parking_name, p.address, p.occupied_since
+             u.name as driver_name, r.parking_id, p.name as parking_name, p.address, p.occupied_since,
+             owner.name as owner_name
             FROM reservations r
             LEFT JOIN users u ON r.driver_id = u.id
             LEFT JOIN parkings p ON r.parking_id = p.id
+            LEFT JOIN users owner ON p.owner_id = owner.id
             WHERE r.driver_id = ? AND r.status IN ('pending','arrived','active')
             ORDER BY r.created_at DESC
         ''', (session['user_id'],))
@@ -625,32 +627,52 @@ def api_get_active_reservations_driver():
         conn.close()
         out = []
         for r in rows:
-            # Some DBs may return columns by index or by name; normalize
             try:
+                # Get owner_name safely
+                try:
+                    owner_name = r['owner_name'] if r['owner_name'] else 'un arrendador'
+                except (KeyError, IndexError):
+                    owner_name = 'un arrendador'
+                
+                # Get optional fields safely
+                try:
+                    occupied_since = r['occupied_since']
+                except (KeyError, IndexError):
+                    occupied_since = None
+                
+                try:
+                    duration_minutes = r['duration_minutes']
+                except (KeyError, IndexError):
+                    duration_minutes = None
+                
+                try:
+                    eta_minutes = r['eta_minutes']
+                except (KeyError, IndexError):
+                    eta_minutes = None
+                
                 out.append({
                     'id': r['id'],
                     'status': r['status'],
-                    'occupied_since': r['occupied_since'] if 'occupied_since' in r.keys() else None,
-                    'duration_minutes': r['duration_minutes'] if 'duration_minutes' in r.keys() else None,
-                    'eta': r['eta_minutes'] if 'eta_minutes' in r.keys() else None,
+                    'occupied_since': occupied_since,
+                    'duration_minutes': duration_minutes,
+                    'eta': eta_minutes,
+                    'eta_minutes': eta_minutes,
                     'created_at': r['created_at'],
                     'driver_id': r['driver_id'],
                     'driver_name': r['driver_name'],
                     'parking_id': r['parking_id'],
                     'parking_name': r['parking_name'],
-                    'address': r['address']
+                    'address': r['address'],
+                    'owner_name': owner_name
                 })
-            except Exception:
-                # fallback to index-based
-                out.append({
-                    'id': r[0], 'status': r[1], 'duration_minutes': r[2] if len(r) > 2 else None,
-                    'eta': r[3] if len(r) > 3 else None, 'created_at': r[4] if len(r) > 4 else None,
-                    'driver_id': r[5] if len(r) > 5 else None, 'driver_name': r[6] if len(r) > 6 else None,
-                    'parking_id': r[7] if len(r) > 7 else None, 'parking_name': r[8] if len(r) > 8 else None,
-                    'address': r[9] if len(r) > 9 else None
-                })
+            except Exception as e:
+                print(f"Error parsing row: {e}, row: {r}")
+                continue
         return jsonify({'success': True, 'reservations': out})
     except Exception as e:
+        import traceback
+        print(f"Error in active/driver: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

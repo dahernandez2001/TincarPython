@@ -8,13 +8,20 @@
       <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TinCar" style="height:44px; margin-right:14px;">
       <span class="h4 text-warning fw-bold mb-0">TinCar</span>
     </div>
-    <nav>
-      <a href="#" class="text-light me-3">Inicio</a>
-      <a href="#" class="text-light me-3">Reservar</a>
-      <a href="#" class="text-light">Configuración</a>
-    </nav>
+    <div class="nav">
+      <a href="#" class="nav-link">Inicio</a>
+      <a href="#" class="nav-link">Reservar</a>
+      <a href="#" class="nav-link">Configuración</a>
+      <div class="nav-bubble"></div>
+    </div>
   </div>
 </header>
+
+<!-- Cono de notificaciones flotante -->
+<div id="notificationIcon" class="notification-cone-fixed">
+  <img src="{{ url_for('static', filename='img/cono.png') }}" alt="Notificaciones">
+  <span id="notificationCount" class="notification-badge-cone">0</span>
+</div>
 
 <main class="container py-4 text-light">
   <div class="landlord-header d-flex justify-content-between align-items-start mb-4">
@@ -191,12 +198,6 @@
     </div>
   </div>
 
-  <!-- Notificaciones en el icono del cono -->
-  <div id="notificationIcon" class="position-fixed" style="top: 20px; right: 20px; cursor: pointer;">
-    <img src="{{ url_for('static', filename='img/cono.png') }}" alt="Notificaciones" style="width: 40px; height: 40px;">
-    <span id="notificationCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
-  </div>
-
   <!-- Modal de Notificaciones -->
   <!-- Ventana emergente de notificaciones -->
   <div id="notificationsModal" class="modal-overlay" aria-hidden="true" style="z-index:9999;">
@@ -260,6 +261,30 @@
 
 {% block scripts %}
 <script>
+// Animación de burbuja en navegación
+document.addEventListener('DOMContentLoaded', () => {
+  const nav = document.querySelector('.nav');
+  if (nav) {
+    const bubble = document.querySelector('.nav-bubble');
+    const links = nav.querySelectorAll('a.nav-link');
+    
+    links.forEach(link => {
+      link.addEventListener('mouseenter', () => {
+        const rect = link.getBoundingClientRect();
+        const navRect = nav.getBoundingClientRect();
+        
+        bubble.style.left = (rect.left - navRect.left) + 'px';
+        bubble.style.width = rect.width + 'px';
+        bubble.style.height = rect.height + 'px';
+      });
+    });
+    
+    nav.addEventListener('mouseleave', () => {
+      bubble.style.width = '0';
+    });
+  }
+});
+
 let notifications = [];
 // Evitar reintentos paralelos de cancelación
 window.pendingCancels = window.pendingCancels || new Set();
