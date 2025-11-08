@@ -3,3 +3,4 @@ Flask-Cors
 bcrypt
 psycopg2-binary
 Flask-SocketIO
+requests
